@@ -133,4 +133,44 @@
     - openLayoutModal: 2회 dispatch → 1회 dispatch로 통합
   - 결과: 성능 개선 (1회 render, 1회 save), 하위 호환 유지
 - 자가테스트 21/21 통과 (하위 호환성 검증)
+
+## 2026-06-27 — v1.2 GitHub Pages 공개 배포 (`ea60d3c`)
+- 별도 git repo 초기화 → `github.com/jayden-choo-aki/seating-chart` public 생성
+- GitHub Pages 활성화 (main / root), 빌드 시간 ~32초
+- Live URL: https://jayden-choo-aki.github.io/seating-chart/
+- 참고: SEED_MEMBERS 실명 66건 공개 노출 — 사용자 동의 후 진행
+
+## 2026-06-27 — v1.2 모바일 행 정렬 일치 (`27f981e`)
+- 문제: `grid-template-columns: 1fr 16px 1fr` + `min-width: 600px`로 좌석 수 다른 행(6/7개)의 우측 끝이 어긋남
+- 해결:
+  - `renderSeats`에서 `max(left)`, `max(right)` 계산해 CSS 변수 주입(`--max-left`, `--max-right`)
+  - 모바일 미디어쿼리에서 컬럼 너비를 `calc(max-left * 44px + (max-left-1) * 3px)` 등 고정 폭 식으로 재정의
+  - `#seat-grid` `min-width: 600px` → `min-width: max-content`
+- 결과: A~G 6번 좌석과 H,I 7번 좌석이 동일 x축에 정렬, 아일 위치도 일치
+- PC 레이아웃은 변경 없음 (사용자 피드백 반영)
+
+## 2026-06-27 — v1.2 행 letter 재할당 + 색상 교체 + 자리번호 corner 라벨 (`ec0cfcb`)
+- **행 letter 재할당** (`getRowLetterMap`):
+  - 빈 행 건너뛰지 않고 좌석 있는 행에만 A부터 순서대로 부여
+  - 매 렌더 새로 계산 → 레이아웃 편집으로 빈 행에 좌석 생기면 자동 재정렬
+  - 구 `A,B,C,_,E,F,_,H,I` → 신 `A,B,C,_,D,E,_,F,G`
+  - `seatLabel(letter, side, col, leftCount)`로 시그니처 변경
+- **색상 교체** (사용자 피드백: 배치=안정감, 명단=조치 대기):
+  - `.member-card`: 파랑 `#e9f1ff` → 노랑 `#fffae6`
+  - `.seat-cell.occupied`: 노랑 `#fffae6` → 파랑 `#e9f1ff`
+  - 점유 셀 이름·메모 반투명 배경 색도 파랑 톤으로 동기화
+- **자리번호 표시 (Option C: corner badge)**:
+  - 빈 좌석: 가운데 큰 워터마크 자리번호 유지
+  - 점유 좌석: 좌상단 미니 라벨 (8px PC / 7px 모바일, 파랑톤 `#6b8fb8`)
+  - 이름·메모 반투명 배경 제거 → 셀 자체가 "이름표" 역할
+- 자가테스트 21/21 통과 유지
+
+## 2026-06-27 — v1.2 문서·파일명 정리
+- `history_seating-chart.md` → `history-seating-chart.md` (언더스코어 → 하이픈으로 통일)
+- `docs/plan-seating-chart.md` 갱신:
+  - 상태/Live URL/Repo 헤더 정보 추가
+  - § 4-3 좌석 배치도: × 버튼 → 더블클릭/더블탭/길게누름 동작 반영, 자리번호 표시 규칙, 모바일 행 폭 통일, 색상 교체 명시
+  - § 4-5 인터랙션 모드: × 동작 제거, 더블클릭/길게누름 추가
+  - § 8 산출물 위치: history 파일명, Repo/Live URL 추가
+  - § 9 v1.2 변경사항 새 섹션 (기존 9→10 재번호)
 - v1.1 배포 준비 완료
