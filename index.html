@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>4부 찬양대 베이스 배치도</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
+  <style>
+    body { font-family: -apple-system, "Noto Sans KR", sans-serif; margin: 0; padding: 12px; background: #f5f5f5; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+
+    #toolbar { margin-bottom: 8px; }
+    #member-panel { background: #fff; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    #member-filter { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+    #member-counter { font-size: 13px; color: #555; margin-bottom: 6px; }
+    #member-list {
+      display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px;
+      align-items: flex-start; align-content: flex-start;
+    }
+    .member-card {
+      background: #e9f1ff; border: 1px solid #b3cdf6; border-radius: 4px;
+      padding: 4px 8px; font-size: 13px; cursor: pointer; user-select: none;
+    }
+    .member-card .memo { font-size: 11px; color: #555; margin-left: 4px; }
+    .member-card.selected { outline: 2px solid #1a73e8; }
+
+    #seat-area { background: #fff; border-radius: 6px; padding: 12px; overflow-x: auto; }
+    .seat-row {
+      display: grid;
+      grid-template-columns: 1fr 24px 1fr;
+      gap: 4px;
+      margin-bottom: 4px;
+      align-items: center;
+      min-height: 32px;
+    }
+    .seat-row .side-cells { display: flex; gap: 4px; }
+    .seat-row .side-left { justify-content: flex-end; }
+    .seat-row .side-right { justify-content: flex-start; }
+    .seat-row .aisle { width: 24px; }
+    .seat-row.empty-row { min-height: 16px; }
+
+    .seat-cell {
+      width: 56px; height: 28px;
+      border: 1px dashed #aaa; border-radius: 4px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-size: 12px; cursor: pointer; user-select: none;
+      position: relative; background: #fafafa;
+      touch-action: manipulation;
+    }
+    .seat-cell.occupied { background: #fffae6; border-style: solid; border-color: #d4b942; }
+    .seat-cell.selected { outline: 2px solid #1a73e8; }
+    .seat-cell .seat-number {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: #b8b8b8;
+      letter-spacing: 0.05em; pointer-events: none;
+      z-index: 0;
+    }
+    .seat-cell .seat-name {
+      position: relative; z-index: 1;
+      font-size: 12px; line-height: 1.1;
+    }
+    .seat-cell .seat-memo {
+      position: relative; z-index: 1;
+      font-size: 9px; line-height: 1; color: #666;
+    }
+    .seat-cell.occupied .seat-name {
+      background: rgba(255, 250, 230, 0.65);
+      padding: 0 4px; border-radius: 2px;
+    }
+    .seat-cell.occupied .seat-memo {
+      background: rgba(255, 250, 230, 0.65);
+      padding: 0 3px; border-radius: 2px;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 8px; }
+      h1 { font-size: 16px; }
+      #seat-area { padding: 8px; }
+      .seat-cell { width: 44px; height: 26px; font-size: 11px; }
+      .seat-cell .seat-number { font-size: 10px; }
+      .seat-cell .seat-name { font-size: 11px; }
+      .seat-cell .seat-memo { font-size: 8px; }
+      .seat-row { grid-template-columns: 1fr 16px 1fr; gap: 3px; }
+      #seat-grid { min-width: 600px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>4부 찬양대 베이스 배치도</h1>
+  <div id="storage-warning" hidden style="background:#fff3cd; padding:8px; margin-bottom:8px; border-radius:4px; color:#664d03;">
+    ⚠️ 저장이 비활성화되어 있습니다. 새로고침 시 데이터가 사라집니다.
+  </div>
+  <div id="toolbar"></div>
+  <section id="member-panel">
+    <div id="member-filter"></div>
+    <div id="member-counter"></div>
+    <div id="member-list"></div>
+  </section>
+  <section id="seat-area">
+    <div id="seat-grid"></div>
+  </section>
+  <div id="modal-backdrop" hidden style="position:fixed; inset:0; background:rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:10;">
+    <div id="modal-box" style="background:#fff; padding:16px; border-radius:6px; min-width:280px; max-width:90vw;"></div>
+  </div>
+  <script>
+    // === 상수 ===
+
+    const STORAGE_KEY = 'seating-chart-v1';
+
+    const INITIAL_LAYOUT = {
+      left:  [6, 6, 6, 0, 6, 6, 0, 7, 7],
+      right: [2, 3, 0, 0, 4, 4, 0, 4, 5]
+    };
+
+    const SEED_MEMBERS = [
+      '권형국','김경환','김광은','김기동','김무선','김병호','김삼만','김성재','김수명','김점율',
+      '김준래','김태석','문익주','박광운','박기영','박병건','박용구','박진출','박태병','박효상',
+      '백유진','서용필','선명업','성지웅','손기철','신동현','신인철','안승남','양광석','여성주',
+      '우세영','원종만','유동규','유민상','유선택','유재건','윤건식','윤달우','윤성만','이만섭',
+      '이정한','이종래','이진수','이창복','이필호','이형민','임준건','임채옥','장일곤','장형렬',
+      '정용수','정지웅','정헌권','정현','조기상','조문장','조병용','조찬민','주인석','최기식',
+      '최동천','최영준','최종두','홍성무','홍성인','황병국'
+    ];
+
+    const CHOSUNG_LIST = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ',
+                          'ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+
+    const CHOSUNG_NORMALIZE = { 'ㄲ':'ㄱ', 'ㄸ':'ㄷ', 'ㅃ':'ㅂ', 'ㅆ':'ㅅ', 'ㅉ':'ㅈ' };
+
+    // === 순수 함수 ===
+
+    function getChosung(name) {
+      if (!name || name.length === 0) return null;
+      const code = name.charCodeAt(0) - 0xAC00;
+      if (code < 0 || code > 11171) return null;
+      return CHOSUNG_LIST[Math.floor(code / 588)];
+    }
+
+    function normalizeChosung(c) { return CHOSUNG_NORMALIZE[c] || c; }
+
+    function sortMembersByName(members) {
+      return members.slice().sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    }
+
+    function filterByChosung(members, chosung) {
+      if (!chosung || chosung === 'ALL') return members;
+      return members.filter(m => normalizeChosung(getChosung(m.name)) === chosung);
+    }
+
+    function seatKey(side, row, col) { return `${side}-${row}-${col}`; }
+
+    function parseSeatKey(key) {
+      const [side, row, col] = key.split('-');
+      return { side, row: parseInt(row, 10), col: parseInt(col, 10) };
+    }
+
+    function seatLabel(side, row, col, leftCount) {
+      const letter = String.fromCharCode(65 + row);  // A, B, C, ...
+      const num = side === 'left' ? col + 1 : leftCount + col + 1;
+      return `${letter}${String(num).padStart(2, '0')}`;
+    }
+
+    function getTotalSeats(layout) {
+      return [...layout.left, ...layout.right].reduce((a, b) => a + b, 0);
+    }
+
+    function getUnassignedMembers(members, assignments) {
+      const assigned = new Set(Object.values(assignments));
+      return members.filter(m => !assigned.has(m.id));
+    }
+
+    function validateLayout(layout, memberCount) {
+      const totalSeats = getTotalSeats(layout);
+      return {
+        totalSeats,
+        memberCount,
+        diff: totalSeats - memberCount,
+        ok: totalSeats >= memberCount
+      };
+    }
+
+    // === state + localStorage ===
+
+    function initialState() {
+      return {
+        members: SEED_MEMBERS.map((name, i) => ({
+          id: `m_seed_${i}`,
+          name,
+          memo: ''
+        })),
+        layout: {
+          left:  [...INITIAL_LAYOUT.left],
+          right: [...INITIAL_LAYOUT.right]
+        },
+        assignments: {}
+      };
+    }
+
+    let storageAvailable = true;
+
+    function loadState() {
+      // 시크릿 모드 등 localStorage 사용 불가 환경을 즉시 감지 (probe write)
+      try {
+        localStorage.setItem(STORAGE_KEY + '.probe', '1');
+        localStorage.removeItem(STORAGE_KEY + '.probe');
+      } catch (e) {
+        storageAvailable = false;
+        return initialState();
+      }
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return initialState();
+        return JSON.parse(raw);
+      } catch (e) {
+        if (e && e.name !== 'SecurityError') {
+          try {
+            const broken = localStorage.getItem(STORAGE_KEY);
+            if (broken) localStorage.setItem(STORAGE_KEY + '.broken', broken);
+          } catch (_) {}
+          console.warn('저장 데이터 손상. 초기화합니다.', e);
+        } else {
+          storageAvailable = false;
+        }
+        return initialState();
+      }
+    }
+
+    function saveState(s) {
+      if (!storageAvailable) return false;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+        return true;
+      } catch (e) {
+        storageAvailable = false;
+        console.warn('저장 실패. 이후 in-memory만 사용합니다.', e);
+        return false;
+      }
+    }
+
+    let state = initialState();
+
+    // === reduce + dispatch ===
+
+    function reduce(s, action) {
+      switch (action.type) {
+        case 'ADD_MEMBER': {
+          const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+          return { ...s, members: [...s.members, { id, name: action.name, memo: action.memo || '' }] };
+        }
+        case 'UPDATE_MEMBER': {
+          return { ...s, members: s.members.map(m =>
+            m.id === action.id ? { ...m, name: action.name, memo: action.memo || '' } : m) };
+        }
+        case 'DELETE_MEMBER': {
+          const next = { ...s.assignments };
+          for (const k of Object.keys(next)) if (next[k] === action.id) delete next[k];
+          return { ...s, members: s.members.filter(m => m.id !== action.id), assignments: next };
+        }
+        case 'ASSIGN': {
+          const next = { ...s.assignments };
+          for (const k of Object.keys(next)) if (next[k] === action.memberId) delete next[k];
+          next[action.seatKey] = action.memberId;
+          return { ...s, assignments: next };
+        }
+        case 'UNASSIGN': {
+          const next = { ...s.assignments };
+          delete next[action.seatKey];
+          return { ...s, assignments: next };
+        }
+        case 'SWAP': {
+          const a = s.assignments[action.seatKeyA];
+          const b = s.assignments[action.seatKeyB];
+          const next = { ...s.assignments };
+          if (b !== undefined) next[action.seatKeyA] = b; else delete next[action.seatKeyA];
+          if (a !== undefined) next[action.seatKeyB] = a; else delete next[action.seatKeyB];
+          return { ...s, assignments: next };
+        }
+        case 'RESET_ASSIGNMENTS': {
+          return { ...s, assignments: {} };
+        }
+        case 'UPDATE_LAYOUT': {
+          // action.layout이 있으면 양쪽 동시 갱신, 없으면 기존처럼 한쪽만
+          const newLayout = action.layout
+            ? { left: [...action.layout.left], right: [...action.layout.right] }
+            : { ...s.layout, [action.side]: [...action.rowCounts] };
+          const next = {};
+          for (const [k, v] of Object.entries(s.assignments)) {
+            const { side, row, col } = parseSeatKey(k);
+            const count = (newLayout[side] || [])[row] || 0;
+            if (col < count) next[k] = v;
+          }
+          return { ...s, layout: newLayout, assignments: next };
+        }
+        default: return s;
+      }
+    }
+
+    function dispatch(action) {
+      state = reduce(state, action);
+      saveState(state);
+      render();
+    }
+
+    // === 렌더 함수 ===
+
+    let filterChosung = null;  // null = 전체
+    let selection = null;  // { type:'member', id } | { type:'seat', key } | null
+
+    function clearSelection() { selection = null; render(); }
+
+    function applySelectionHighlight() {
+      document.querySelectorAll('.member-card.selected, .seat-cell.selected')
+        .forEach(el => el.classList.remove('selected'));
+      if (!selection) return;
+      if (selection.type === 'member') {
+        const el = document.querySelector(`.member-card[data-member-id="${selection.id}"]`);
+        if (el) el.classList.add('selected');
+      } else {
+        const el = document.querySelector(`.seat-cell[data-seat-key="${selection.key}"]`);
+        if (el) el.classList.add('selected');
+      }
+    }
+
+    function renderToolbar() {
+      const el = document.getElementById('toolbar');
+      el.innerHTML = `
+        <button type="button" id="tb-add-member">+ 단원 추가</button>
+        <button type="button" id="tb-edit-layout">레이아웃 편집</button>
+        <button type="button" id="tb-png">PNG 다운로드</button>
+        <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
+      `;
+      el.querySelector('#tb-add-member').onclick = () => openMemberModal(null);
+      el.querySelector('#tb-edit-layout').onclick = openLayoutModal;
+      el.querySelector('#tb-png').onclick = downloadPng;
+      el.querySelector('#tb-reset').onclick = () => {
+        if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
+          dispatch({ type: 'RESET_ASSIGNMENTS' });
+        }
+      };
+    }
+
+    function renderFilterBar() {
+      const el = document.getElementById('member-filter');
+      el.innerHTML = '';
+      const labels = ['전체','ㄱ','ㄴ','ㄷ','ㄹ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+      for (const label of labels) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.dataset.chosung = (label === '전체') ? 'ALL' : label;
+        b.style.cssText = 'padding:2px 8px; font-size:12px; cursor:pointer;';
+        const active = (filterChosung === null && label === '전체') || filterChosung === label;
+        if (active) b.style.background = '#1a73e8', b.style.color = '#fff';
+        el.appendChild(b);
+      }
+    }
+
+    function render() {
+      document.getElementById('storage-warning').hidden = storageAvailable;
+      renderToolbar();
+      renderFilterBar();
+      renderCounter();
+      renderMemberList();
+      renderSeats();
+      applySelectionHighlight();
+    }
+
+    function renderCounter() {
+      const total = state.members.length;
+      const assigned = Object.keys(state.assignments).length;
+      const unassigned = total - assigned;
+      document.getElementById('member-counter').textContent =
+        `배치 ${assigned} / 미배치 ${unassigned} / 총 ${total}명`;
+    }
+
+    function renderMemberList() {
+      const el = document.getElementById('member-list');
+      let unassigned = sortMembersByName(getUnassignedMembers(state.members, state.assignments));
+      unassigned = filterByChosung(unassigned, filterChosung);
+      el.innerHTML = '';
+      for (const m of unassigned) {
+        const card = document.createElement('div');
+        card.className = 'member-card';
+        card.dataset.memberId = m.id;
+        card.draggable = true;
+        const nameEl = document.createElement('span');
+        nameEl.textContent = m.name;
+        card.appendChild(nameEl);
+        if (m.memo) {
+          const memoEl = document.createElement('span');
+          memoEl.className = 'memo';
+          memoEl.textContent = `(${m.memo})`;
+          card.appendChild(memoEl);
+        }
+        el.appendChild(card);
+      }
+      if (unassigned.length === 0) {
+        el.textContent = '표시할 단원이 없습니다.';
+      }
+    }
+
+    function renderSeats() {
+      const grid = document.getElementById('seat-grid');
+      grid.innerHTML = '';
+      const rows = state.layout.left.length;  // 9
+      for (let r = 0; r < rows; r++) {
+        const leftCount = state.layout.left[r];
+        const rightCount = state.layout.right[r];
+        const rowEl = document.createElement('div');
+        rowEl.className = 'seat-row';
+        if (leftCount === 0 && rightCount === 0) rowEl.classList.add('empty-row');
+
+        const leftSide = document.createElement('div');
+        leftSide.className = 'side-cells side-left';
+        for (let c = 0; c < leftCount; c++) leftSide.appendChild(makeSeatCell('left', r, c, leftCount));
+
+        const aisle = document.createElement('div');
+        aisle.className = 'aisle';
+
+        const rightSide = document.createElement('div');
+        rightSide.className = 'side-cells side-right';
+        for (let c = 0; c < rightCount; c++) rightSide.appendChild(makeSeatCell('right', r, c, leftCount));
+
+        rowEl.appendChild(leftSide);
+        rowEl.appendChild(aisle);
+        rowEl.appendChild(rightSide);
+        grid.appendChild(rowEl);
+      }
+    }
+
+    function makeSeatCell(side, row, col, leftCount) {
+      const key = seatKey(side, row, col);
+      const cell = document.createElement('div');
+      cell.className = 'seat-cell';
+      cell.dataset.seatKey = key;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'seat-number';
+      labelEl.textContent = seatLabel(side, row, col, leftCount);
+      cell.appendChild(labelEl);
+
+      const memberId = state.assignments[key];
+      if (memberId) {
+        const m = state.members.find(x => x.id === memberId);
+        cell.classList.add('occupied');
+        cell.draggable = true;
+        const nameEl = document.createElement('span');
+        nameEl.className = 'seat-name';
+        nameEl.textContent = m ? m.name : '?';
+        cell.appendChild(nameEl);
+        if (m && m.memo) {
+          const memoEl = document.createElement('span');
+          memoEl.className = 'seat-memo';
+          memoEl.textContent = m.memo;
+          cell.appendChild(memoEl);
+        }
+      }
+      return cell;
+    }
+
+    // === 모달 헬퍼 함수 ===
+
+    function openModal(html, onMount) {
+      const box = document.getElementById('modal-box');
+      box.innerHTML = html;
+      const bd = document.getElementById('modal-backdrop');
+      bd.hidden = false;
+      bd.style.display = 'flex';
+      if (onMount) onMount(box);
+    }
+
+    function closeModal() {
+      const bd = document.getElementById('modal-backdrop');
+      bd.hidden = true;
+      bd.style.display = 'none';
+      document.getElementById('modal-box').innerHTML = '';
+    }
+
+    function openMemberModal(existing) {
+      const isEdit = !!existing;
+      openModal(`
+        <h3 style="margin:0 0 12px;">${isEdit ? '단원 수정' : '단원 추가'}</h3>
+        <label style="display:block; margin-bottom:8px;">이름
+          <input id="mm-name" type="text" value="${existing ? escapeHtml(existing.name) : ''}" style="width:100%; padding:4px; box-sizing:border-box;">
+        </label>
+        <label style="display:block; margin-bottom:12px;">메모
+          <input id="mm-memo" type="text" value="${existing ? escapeHtml(existing.memo) : ''}" style="width:100%; padding:4px; box-sizing:border-box;">
+        </label>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          ${isEdit ? '<button type="button" id="mm-delete" style="margin-right:auto; color:#d33;">삭제</button>' : ''}
+          <button type="button" id="mm-cancel">취소</button>
+          <button type="button" id="mm-save">저장</button>
+        </div>
+      `, (box) => {
+        const nameInput = box.querySelector('#mm-name');
+        const memoInput = box.querySelector('#mm-memo');
+        nameInput.focus();
+
+        box.querySelector('#mm-cancel').onclick = closeModal;
+        box.querySelector('#mm-save').onclick = () => {
+          const name = nameInput.value.trim();
+          if (!name) { nameInput.focus(); return; }
+          if (isEdit) {
+            dispatch({ type: 'UPDATE_MEMBER', id: existing.id, name, memo: memoInput.value.trim() });
+          } else {
+            dispatch({ type: 'ADD_MEMBER', name, memo: memoInput.value.trim() });
+          }
+          closeModal();
+        };
+        if (isEdit) {
+          box.querySelector('#mm-delete').onclick = () => {
+            const isAssigned = Object.values(state.assignments).includes(existing.id);
+            const msg = isAssigned
+              ? `'${existing.name}' 단원을 삭제하면 배치된 좌석도 비워집니다. 계속할까요?`
+              : `'${existing.name}' 단원을 삭제할까요?`;
+            if (!confirm(msg)) return;
+            dispatch({ type: 'DELETE_MEMBER', id: existing.id });
+            closeModal();
+          };
+        }
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+    }
+
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+    function timestamp() {
+      const d = new Date();
+      return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+    }
+
+    async function downloadPng() {
+      if (typeof html2canvas !== 'function') {
+        alert('이미지 라이브러리를 불러올 수 없습니다. 인터넷 연결을 확인하세요.');
+        return;
+      }
+      const area = document.getElementById('seat-area');
+      // 좁은 화면에서 잘리지 않도록 임시로 폭을 넓힌다
+      const origStyle = area.getAttribute('style') || '';
+      area.style.width = Math.max(area.scrollWidth, 800) + 'px';
+      try {
+        const canvas = await html2canvas(area, { backgroundColor: '#ffffff', scale: 2 });
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `seating-chart-${timestamp()}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) {
+        alert('이미지 생성에 실패했습니다: ' + e.message);
+      } finally {
+        area.setAttribute('style', origStyle);
+      }
+    }
+
+    function openLayoutModal() {
+      const rows = state.layout.left.length;
+      const inputsHtml = [];
+      for (let r = 0; r < rows; r++) {
+        inputsHtml.push(`
+          <tr>
+            <td>${r + 1}행</td>
+            <td><input type="number" min="0" max="10" data-side="left" data-row="${r}" value="${state.layout.left[r]}" style="width:50px"></td>
+            <td><input type="number" min="0" max="10" data-side="right" data-row="${r}" value="${state.layout.right[r]}" style="width:50px"></td>
+          </tr>
+        `);
+      }
+      openModal(`
+        <h3 style="margin:0 0 12px;">레이아웃 편집</h3>
+        <table style="border-collapse:collapse; width:100%;">
+          <thead><tr><th></th><th>Left Side</th><th>Right Side</th></tr></thead>
+          <tbody>${inputsHtml.join('')}</tbody>
+        </table>
+        <p id="lm-sum" style="margin:8px 0; font-size:13px;"></p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" id="lm-cancel">취소</button>
+          <button type="button" id="lm-save">저장</button>
+        </div>
+      `, (box) => {
+        function snapshot() {
+          const left = [], right = [];
+          box.querySelectorAll('input[data-side]').forEach(inp => {
+            const v = Math.max(0, Math.min(10, parseInt(inp.value || '0', 10) || 0));
+            (inp.dataset.side === 'left' ? left : right)[parseInt(inp.dataset.row,10)] = v;
+          });
+          return { left, right };
+        }
+        function refreshSum() {
+          const cur = snapshot();
+          const total = getTotalSeats(cur);
+          const mc = state.members.length;
+          const diff = total - mc;
+          const note = diff === 0 ? '✓ 좌석 수 = 단원 수' : (diff > 0 ? `좌석이 ${diff} 많음 (미배치 가능)` : `좌석이 ${-diff} 부족 (배치 불가)`);
+          box.querySelector('#lm-sum').textContent = `좌석 ${total} / 단원 ${mc}명 — ${note}`;
+        }
+        box.addEventListener('input', refreshSum);
+        refreshSum();
+
+        box.querySelector('#lm-cancel').onclick = closeModal;
+        box.querySelector('#lm-save').onclick = () => {
+          const cur = snapshot();
+          const total = getTotalSeats(cur);
+          if (total === 0) { alert('모든 행이 0입니다. 저장할 수 없습니다.'); return; }
+          // 사라질 좌석의 단원 확인
+          const lost = [];
+          for (const [k, v] of Object.entries(state.assignments)) {
+            const { side, row, col } = parseSeatKey(k);
+            const newCount = cur[side][row];
+            if (col >= newCount) {
+              const m = state.members.find(x => x.id === v);
+              if (m) lost.push(m.name);
+            }
+          }
+          if (lost.length > 0) {
+            if (!confirm(`변경 시 다음 ${lost.length}명이 명단으로 돌아갑니다:\n${lost.join(', ')}\n계속할까요?`)) return;
+          }
+          dispatch({ type: 'UPDATE_LAYOUT', layout: cur });
+          closeModal();
+        };
+      });
+    }
+
+    // === 자가테스트 ===
+
+    function assert(cond, label) {
+      if (!cond) throw new Error('FAIL: ' + label);
+    }
+
+    function runSelfTests() {
+      const tests = [
+        () => assert(SEED_MEMBERS.length === 66, 'SEED_MEMBERS 길이 66'),
+        () => assert(getTotalSeats(INITIAL_LAYOUT) === 66, 'INITIAL_LAYOUT 총합 66'),
+
+        () => assert(getChosung('김지영') === 'ㄱ', "getChosung 김지영 → ㄱ"),
+        () => assert(getChosung('박철수') === 'ㅂ', "getChosung 박철수 → ㅂ"),
+        () => assert(getChosung('홍길동') === 'ㅎ', "getChosung 홍길동 → ㅎ"),
+        () => assert(getChosung('끔찍이') === 'ㄲ', "getChosung 끔찍이 → ㄲ"),
+        () => assert(getChosung('Eric') === null, "getChosung Eric → null"),
+        () => assert(getChosung('') === null, "getChosung 빈문자 → null"),
+
+        () => assert(normalizeChosung('ㄲ') === 'ㄱ', "normalize ㄲ → ㄱ"),
+        () => assert(normalizeChosung('ㅎ') === 'ㅎ', "normalize ㅎ → ㅎ"),
+
+        () => {
+          const sorted = sortMembersByName([
+            {id:'a', name:'박철수', memo:''},
+            {id:'b', name:'김지영', memo:''},
+            {id:'c', name:'이순신', memo:''},
+          ]);
+          assert(sorted.map(m => m.name).join(',') === '김지영,박철수,이순신', '가나다 정렬');
+        },
+
+        () => {
+          const ms = [{id:'a', name:'김철수'}, {id:'b', name:'박지성'}, {id:'c', name:'끔찍이'}];
+          assert(filterByChosung(ms, 'ㄱ').length === 2, '초성 ㄱ → 김+끔 = 2건');
+          assert(filterByChosung(ms, null).length === 3, 'null → 전체');
+          assert(filterByChosung(ms, 'ALL').length === 3, "ALL → 전체");
+        },
+
+        () => assert(seatKey('left', 2, 3) === 'left-2-3', 'seatKey 직렬화'),
+        () => {
+          const k = parseSeatKey('right-5-0');
+          assert(k.side === 'right' && k.row === 5 && k.col === 0, 'parseSeatKey 파싱');
+        },
+
+        () => {
+          const ms = [{id:'a',name:'김'},{id:'b',name:'박'},{id:'c',name:'이'}];
+          const assignments = { 'left-0-0': 'a' };
+          const u = getUnassignedMembers(ms, assignments);
+          assert(u.length === 2 && u.map(m=>m.id).join(',') === 'b,c', '미배치 계산');
+        },
+
+        () => {
+          const v = validateLayout(INITIAL_LAYOUT, 66);
+          assert(v.totalSeats === 66 && v.memberCount === 66 && v.diff === 0 && v.ok === true, 'validateLayout 정상');
+        },
+        () => {
+          const v = validateLayout(INITIAL_LAYOUT, 70);
+          assert(v.diff === -4 && v.ok === false, 'validateLayout 단원 초과');
+        },
+
+        () => {
+          const s0 = { members: [], layout: INITIAL_LAYOUT, assignments: {} };
+          const s1 = reduce(s0, { type: 'ADD_MEMBER', name: '테스트', memo: '' });
+          assert(s1.members.length === 1 && s1.members[0].name === '테스트', 'ADD_MEMBER');
+          const id = s1.members[0].id;
+          const s2 = reduce(s1, { type: 'UPDATE_MEMBER', id, name: '수정', memo: '메모' });
+          assert(s2.members[0].name === '수정' && s2.members[0].memo === '메모', 'UPDATE_MEMBER');
+          const s3 = reduce(s2, { type: 'DELETE_MEMBER', id });
+          assert(s3.members.length === 0, 'DELETE_MEMBER');
+        },
+        () => {
+          const s0 = {
+            members: [{id:'a',name:'김'}],
+            layout: INITIAL_LAYOUT,
+            assignments: { 'left-0-0': 'a' }
+          };
+          const s1 = reduce(s0, { type: 'DELETE_MEMBER', id: 'a' });
+          assert(Object.keys(s1.assignments).length === 0, 'DELETE_MEMBER가 배치도 해제');
+        },
+        () => {
+          const s0 = { members: [{id:'a',name:'김'},{id:'b',name:'박'}], layout: INITIAL_LAYOUT, assignments: {} };
+          const s1 = reduce(s0, { type:'ASSIGN', seatKey:'left-0-0', memberId:'a' });
+          assert(s1.assignments['left-0-0'] === 'a', 'ASSIGN 배치');
+          const s2 = reduce(s1, { type:'ASSIGN', seatKey:'left-0-1', memberId:'a' });
+          assert(s2.assignments['left-0-0'] === undefined && s2.assignments['left-0-1'] === 'a', 'ASSIGN 시 다른 좌석 자동 해제');
+          const s3 = reduce(s2, { type:'UNASSIGN', seatKey:'left-0-1' });
+          assert(s3.assignments['left-0-1'] === undefined, 'UNASSIGN');
+          const s4 = reduce(s0, { type:'ASSIGN', seatKey:'left-0-0', memberId:'a' });
+          const s5 = reduce(s4, { type:'ASSIGN', seatKey:'left-0-1', memberId:'b' });
+          const s6 = reduce(s5, { type:'SWAP', seatKeyA:'left-0-0', seatKeyB:'left-0-1' });
+          assert(s6.assignments['left-0-0'] === 'b' && s6.assignments['left-0-1'] === 'a', 'SWAP 양쪽 점유');
+          const s7 = reduce(s4, { type:'SWAP', seatKeyA:'left-0-0', seatKeyB:'left-0-2' });
+          assert(s7.assignments['left-0-2'] === 'a' && s7.assignments['left-0-0'] === undefined, 'SWAP 한쪽 빈 좌석');
+          const s8 = reduce(s5, { type:'RESET_ASSIGNMENTS' });
+          assert(Object.keys(s8.assignments).length === 0 && s8.members.length === 2, 'RESET_ASSIGNMENTS는 멤버 유지');
+        },
+        () => {
+          const s0 = {
+            members: [{id:'a',name:'김'}],
+            layout: { left:[2,2], right:[1,1] },
+            assignments: { 'left-1-1': 'a' }   // col=1
+          };
+          const s1 = reduce(s0, { type:'UPDATE_LAYOUT', side:'left', rowCounts:[2,1] });
+          assert(s1.assignments['left-1-1'] === undefined, 'UPDATE_LAYOUT 축소 시 좌석 자동 해제');
+          assert(s1.layout.left[1] === 1 && s1.layout.right[1] === 1, 'UPDATE_LAYOUT 다른 사이드 보존');
+        },
+      ];
+
+      let pass = 0, fail = 0;
+      for (const t of tests) {
+        try { t(); pass++; }
+        catch (e) { console.error('✗', e.message); fail++; }
+      }
+      console.log(`자가테스트: ${pass}/${pass+fail} 통과 (실패 ${fail}건)`);
+      return { pass, fail };
+    }
+
+    if (new URL(location.href).searchParams.get('test') === '1') {
+      document.addEventListener('DOMContentLoaded', runSelfTests);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (new URL(location.href).searchParams.get('test') === '1') return; // 테스트 모드는 렌더 생략
+      state = loadState();
+      render();
+
+      // 단원 카드 더블클릭 → 수정 모달 (단순 한 번 클릭은 후속 태스크의 "선택"에 쓰임)
+      document.getElementById('member-list').addEventListener('dblclick', (e) => {
+        const card = e.target.closest('[data-member-id]');
+        if (!card) return;
+        const m = state.members.find(x => x.id === card.dataset.memberId);
+        if (m) openMemberModal(m);
+      });
+
+      // 단원 카드 단일 클릭 → 선택 / 배치
+      document.getElementById('member-list').addEventListener('click', (e) => {
+        const card = e.target.closest('[data-member-id]');
+        if (!card) return;
+        const memberId = card.dataset.memberId;
+        if (selection && selection.type === 'seat') {
+          // 좌석 선택 상태에서 단원 클릭 → 배치
+          const seatKey = selection.key;
+          selection = null;
+          dispatch({ type: 'ASSIGN', seatKey, memberId });
+          return;
+        }
+        if (selection && selection.type === 'member' && selection.id === memberId) {
+          selection = null; render(); return; // 재선택 = 해제
+        }
+        selection = { type: 'member', id: memberId };
+        applySelectionHighlight();
+      });
+
+      // 좌석 클릭 → 선택 / 배치 (점유 좌석: 더블클릭=해제, 길게누름=수정)
+      document.getElementById('seat-grid').addEventListener('click', (e) => {
+        if (longPressFired) { longPressFired = false; return; }
+        const cell = e.target.closest('[data-seat-key]');
+        if (!cell) return;
+        const key = cell.dataset.seatKey;
+        const isOccupied = cell.classList.contains('occupied');
+        if (selection && selection.type === 'member') {
+          if (isOccupied) return; // 단원 선택 상태에서 점유 좌석 클릭 무시
+          const memberId = selection.id;
+          selection = null;
+          dispatch({ type: 'ASSIGN', seatKey: key, memberId });
+          return;
+        }
+        if (isOccupied) return; // 점유 좌석 단일 클릭은 무동작 (더블클릭=해제, 길게누름=수정)
+        if (selection && selection.type === 'seat' && selection.key === key) {
+          selection = null; render(); return;
+        }
+        selection = { type: 'seat', key };
+        applySelectionHighlight();
+      });
+
+      // 좌석 더블클릭/더블탭 → 배치 해제
+      document.getElementById('seat-grid').addEventListener('dblclick', (e) => {
+        const cell = e.target.closest('[data-seat-key]');
+        if (!cell || !cell.classList.contains('occupied')) return;
+        dispatch({ type: 'UNASSIGN', seatKey: cell.dataset.seatKey });
+      });
+
+      // 좌석 길게 누르기 → 단원 수정 모달 (이름/메모)
+      let longPressTimer = null;
+      let longPressFired = false;
+      let longPressStartX = 0, longPressStartY = 0;
+      function clearLongPress() {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      }
+      const seatGridEl = document.getElementById('seat-grid');
+      seatGridEl.addEventListener('pointerdown', (e) => {
+        const cell = e.target.closest('[data-seat-key]');
+        if (!cell || !cell.classList.contains('occupied')) return;
+        longPressStartX = e.clientX;
+        longPressStartY = e.clientY;
+        longPressFired = false;
+        clearLongPress();
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          longPressFired = true;
+          const memberId = state.assignments[cell.dataset.seatKey];
+          if (memberId) {
+            const m = state.members.find(x => x.id === memberId);
+            if (m) openMemberModal(m);
+          }
+        }, 500);
+      });
+      seatGridEl.addEventListener('pointermove', (e) => {
+        if (!longPressTimer) return;
+        if (Math.abs(e.clientX - longPressStartX) > 8 ||
+            Math.abs(e.clientY - longPressStartY) > 8) clearLongPress();
+      });
+      seatGridEl.addEventListener('pointerup', clearLongPress);
+      seatGridEl.addEventListener('pointercancel', clearLongPress);
+      seatGridEl.addEventListener('pointerleave', clearLongPress);
+      seatGridEl.addEventListener('contextmenu', (e) => {
+        const cell = e.target.closest('[data-seat-key]');
+        if (cell && cell.classList.contains('occupied')) e.preventDefault();
+      });
+
+      // 빈 영역 클릭 시 선택 해제
+      document.body.addEventListener('click', (e) => {
+        if (e.target.closest('.member-card, .seat-cell, #toolbar, #modal-backdrop, button')) return;
+        if (selection) clearSelection();
+      });
+
+      // 필터 바 클릭
+      document.getElementById('member-filter').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-chosung]');
+        if (!b) return;
+        filterChosung = (b.dataset.chosung === 'ALL') ? null : b.dataset.chosung;
+        render();
+      });
+
+      // 모달 바깥 클릭/ESC로 닫기
+      document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+        if (e.target.id === 'modal-backdrop') closeModal();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+      });
+
+      // === 드래그&드롭 핸들러 ===
+
+      // dataTransfer 페이로드 직렬화/역직렬화 헬퍼
+      function payloadToDT(dt, obj) {
+        dt.setData('application/json', JSON.stringify(obj));
+        dt.effectAllowed = 'move';
+      }
+
+      function payloadFromDT(dt) {
+        try { return JSON.parse(dt.getData('application/json')); }
+        catch { return null; }
+      }
+
+      // 명단 영역 dragstart: 단원 카드에서만 작동
+      document.getElementById('member-list').addEventListener('dragstart', (e) => {
+        const card = e.target.closest('[data-member-id]');
+        if (!card) return;
+        payloadToDT(e.dataTransfer, { kind: 'member', memberId: card.dataset.memberId });
+      });
+
+      // 좌석 영역 dragstart: 점유된 좌석에서만 작동
+      document.getElementById('seat-grid').addEventListener('dragstart', (e) => {
+        const cell = e.target.closest('[data-seat-key]');
+        if (!cell || !cell.classList.contains('occupied')) return;
+        payloadToDT(e.dataTransfer, { kind: 'seat', seatKey: cell.dataset.seatKey });
+      });
+
+      // 좌석 영역 dragover: 좌석 타겟이면 drop 허용
+      document.getElementById('seat-grid').addEventListener('dragover', (e) => {
+        if (e.target.closest('[data-seat-key]')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }
+      });
+
+      // 좌석 영역 drop: 드롭 의미론에 따라 액션 분기
+      document.getElementById('seat-grid').addEventListener('drop', (e) => {
+        const cell = e.target.closest('[data-seat-key]');
+        if (!cell) return;
+        e.preventDefault();
+        const payload = payloadFromDT(e.dataTransfer);
+        if (!payload) return;
+        const targetKey = cell.dataset.seatKey;
+        const targetOccupied = !!state.assignments[targetKey];
+
+        if (payload.kind === 'member') {
+          // 단원 → 좌석: 점유면 기존 단원 먼저 해제 후 배치
+          if (targetOccupied) dispatch({ type: 'UNASSIGN', seatKey: targetKey });
+          dispatch({ type: 'ASSIGN', seatKey: targetKey, memberId: payload.memberId });
+        } else if (payload.kind === 'seat') {
+          // 같은 좌석에 자신 드롭 시 무시
+          if (payload.seatKey === targetKey) return;
+          if (targetOccupied) {
+            // 점유 좌석 간 이동: SWAP
+            dispatch({ type: 'SWAP', seatKeyA: payload.seatKey, seatKeyB: targetKey });
+          } else {
+            // 빈 좌석으로 이동: 단원 ID를 들고 ASSIGN (자동 해제)
+            const memberId = state.assignments[payload.seatKey];
+            if (memberId) dispatch({ type: 'ASSIGN', seatKey: targetKey, memberId });
+          }
+        }
+      });
+
+      // 명단 영역 drop: 좌석에서만 드롭 가능 (UNASSIGN)
+      document.getElementById('member-panel').addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+
+      document.getElementById('member-panel').addEventListener('drop', (e) => {
+        const payload = payloadFromDT(e.dataTransfer);
+        if (!payload || payload.kind !== 'seat') return;
+        e.preventDefault();
+        dispatch({ type: 'UNASSIGN', seatKey: payload.seatKey });
+      });
+    });
+  </script>
+</body>
+</html>
