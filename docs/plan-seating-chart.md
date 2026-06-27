@@ -338,7 +338,7 @@ members.slice().sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 - 기획안: `seating-chart/docs/plan-seating-chart.md` (본 문서)
 - 구현 계획: `seating-chart/docs/impl-seating-chart.md`
 - 구현 코드: `seating-chart/index.html`
-- 작업 히스토리: `seating-chart/history-seating-chart.md`
+- 작업 히스토리: `seating-chart/docs/history-seating-chart.md`
 - Repo: https://github.com/jayden-choo-aki/seating-chart
 - Live: https://jayden-choo-aki.github.io/seating-chart/
 

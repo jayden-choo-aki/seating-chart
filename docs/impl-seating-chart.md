@@ -19,7 +19,7 @@
 - 초기 단원 66명 명단은 부록 A(기획안)의 순서/표기 그대로 시드 데이터로 등록.
 - 한글 정렬은 `localeCompare(name, 'ko')`. 초성 추출은 `(charCode - 0xAC00) / 588`.
 - 좌석 정렬: Left Side는 통로 쪽(오른쪽)으로 우측 정렬, Right Side는 통로 쪽(왼쪽)으로 좌측 정렬.
-- **Git 저장소가 아님**. 각 태스크의 "체크포인트"는 (1) 브라우저에서 정의된 동작을 확인하고 (2) `seating-chart/history-seating-chart.md`에 1~2줄로 진척 기록을 남기는 것으로 갈음한다.
+- **Git 저장소가 아님**. 각 태스크의 "체크포인트"는 (1) 브라우저에서 정의된 동작을 확인하고 (2) `seating-chart/docs/history-seating-chart.md`에 1~2줄로 진척 기록을 남기는 것으로 갈음한다.
 
 ## 파일 구조
 
@@ -27,7 +27,7 @@
 |---|---|
 | `seating-chart/index.html` | 앱 본체. 모든 HTML/CSS/JS 인라인. |
 | `seating-chart/README.md` | 사용 방법, 수동 체크리스트, FAQ. (Task 9에서 작성) |
-| `seating-chart/history-seating-chart.md` | 작업 진척 메모. 각 태스크 체크포인트마다 1~2줄 추가. |
+| `seating-chart/docs/history-seating-chart.md` | 작업 진척 메모. 각 태스크 체크포인트마다 1~2줄 추가. |
 
 `index.html` 내부 `<script>` 섹션은 위에서 아래로 다음 순서를 지킨다:
 
@@ -48,7 +48,7 @@
 
 **Files:**
 - Create: `seating-chart/index.html`
-- Create: `seating-chart/history-seating-chart.md`
+- Create: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: (없음)
@@ -249,7 +249,7 @@ if (new URL(location.href).searchParams.get('test') === '1') {
 
 - [ ] **Step 6: 체크포인트**
 
-`seating-chart/history-seating-chart.md` 파일을 다음 내용으로 생성한다:
+`seating-chart/docs/history-seating-chart.md` 파일을 다음 내용으로 생성한다:
 
 ```markdown
 # seating-chart 작업 히스토리
@@ -267,7 +267,7 @@ if (new URL(location.href).searchParams.get('test') === '1') {
 
 **Files:**
 - Modify: `seating-chart/index.html` (`<script>` 하단, `<body>` 구조)
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: Task 1의 모든 함수와 상수
@@ -526,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 **Files:**
 - Modify: `seating-chart/index.html`
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: Task 2의 `state`, `saveState`, `render`, `renderMemberList`
@@ -783,7 +783,7 @@ document.addEventListener('keydown', (e) => {
 
 **Files:**
 - Modify: `seating-chart/index.html`
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: Task 3의 `reduce`, `dispatch`, `state`, `render`
@@ -954,7 +954,7 @@ document.body.addEventListener('click', (e) => {
 
 **Files:**
 - Modify: `seating-chart/index.html`
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: Task 4의 `dispatch`, `state`, `ASSIGN`/`UNASSIGN`/`SWAP` 액션
@@ -1063,7 +1063,7 @@ document.getElementById('member-panel').addEventListener('drop', (e) => {
 
 **Files:**
 - Modify: `seating-chart/index.html`
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: Task 4의 `reduce`, Task 2의 `state`
@@ -1360,7 +1360,7 @@ async function downloadPng() {
 
 **Files:**
 - Create: `seating-chart/README.md`
-- Modify: `seating-chart/history-seating-chart.md`
+- Modify: `seating-chart/docs/history-seating-chart.md`
 
 **Interfaces:**
 - Consumes: 완성된 `index.html`
