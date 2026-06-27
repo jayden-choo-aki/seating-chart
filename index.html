@@ -81,8 +81,15 @@
       .seat-cell .seat-number { font-size: 10px; }
       .seat-cell .seat-name { font-size: 11px; }
       .seat-cell .seat-memo { font-size: 8px; }
-      .seat-row { grid-template-columns: 1fr 16px 1fr; gap: 3px; }
-      #seat-grid { min-width: 600px; }
+      /* 모든 행이 동일한 컬럼 너비 공유 → A~G 6번 좌석과 H,I 7번 좌석 우측 정렬 일치 */
+      .seat-row {
+        grid-template-columns:
+          calc(var(--max-left, 1) * 44px + (var(--max-left, 1) - 1) * 3px)
+          16px
+          calc(var(--max-right, 1) * 44px + (var(--max-right, 1) - 1) * 3px);
+        gap: 3px;
+      }
+      #seat-grid { min-width: max-content; }
     }
   </style>
 </head>
@@ -403,6 +410,11 @@
     function renderSeats() {
       const grid = document.getElementById('seat-grid');
       grid.innerHTML = '';
+      // 모바일 그리드 컬럼 정렬용: 모든 행이 max(left)/max(right) 폭을 공유
+      const maxLeft = Math.max(1, ...state.layout.left);
+      const maxRight = Math.max(1, ...state.layout.right);
+      grid.style.setProperty('--max-left', String(maxLeft));
+      grid.style.setProperty('--max-right', String(maxRight));
       const rows = state.layout.left.length;  // 9
       for (let r = 0; r < rows; r++) {
         const leftCount = state.layout.left[r];
