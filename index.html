@@ -18,7 +18,7 @@
       align-items: flex-start; align-content: flex-start;
     }
     .member-card {
-      background: #e9f1ff; border: 1px solid #b3cdf6; border-radius: 4px;
+      background: #fffae6; border: 1px solid #d4b942; border-radius: 4px;
       padding: 4px 8px; font-size: 13px; cursor: pointer; user-select: none;
     }
     .member-card .memo { font-size: 11px; color: #555; margin-left: 4px; }
@@ -47,31 +47,27 @@
       position: relative; background: #fafafa;
       touch-action: manipulation;
     }
-    .seat-cell.occupied { background: #fffae6; border-style: solid; border-color: #d4b942; }
+    .seat-cell.occupied { background: #e9f1ff; border-style: solid; border-color: #b3cdf6; }
     .seat-cell.selected { outline: 2px solid #1a73e8; }
+    /* 빈 좌석: 가운데 큰 자리번호 (워터마크) */
     .seat-cell .seat-number {
       position: absolute; inset: 0;
       display: flex; align-items: center; justify-content: center;
       font-size: 11px; color: #b8b8b8;
       letter-spacing: 0.05em; pointer-events: none;
-      z-index: 0;
     }
-    .seat-cell .seat-name {
-      position: relative; z-index: 1;
-      font-size: 12px; line-height: 1.1;
+    /* 점유 좌석: 좌상단 미니 라벨로 이동 → 이름과 시야 분리 */
+    .seat-cell.occupied .seat-number {
+      inset: auto;
+      top: 1px; left: 3px;
+      display: block;
+      font-size: 8px;
+      color: #6b8fb8;
+      letter-spacing: 0;
+      line-height: 1;
     }
-    .seat-cell .seat-memo {
-      position: relative; z-index: 1;
-      font-size: 9px; line-height: 1; color: #666;
-    }
-    .seat-cell.occupied .seat-name {
-      background: rgba(255, 250, 230, 0.65);
-      padding: 0 4px; border-radius: 2px;
-    }
-    .seat-cell.occupied .seat-memo {
-      background: rgba(255, 250, 230, 0.65);
-      padding: 0 3px; border-radius: 2px;
-    }
+    .seat-cell .seat-name { font-size: 12px; line-height: 1.1; }
+    .seat-cell .seat-memo { font-size: 9px; line-height: 1; color: #666; }
 
     @media (max-width: 768px) {
       body { padding: 8px; }
@@ -79,6 +75,7 @@
       #seat-area { padding: 8px; }
       .seat-cell { width: 44px; height: 26px; font-size: 11px; }
       .seat-cell .seat-number { font-size: 10px; }
+      .seat-cell.occupied .seat-number { font-size: 7px; top: 1px; left: 2px; }
       .seat-cell .seat-name { font-size: 11px; }
       .seat-cell .seat-memo { font-size: 8px; }
       /* 모든 행이 동일한 컬럼 너비 공유 → A~G 6번 좌석과 H,I 7번 좌석 우측 정렬 일치 */
@@ -162,8 +159,20 @@
       return { side, row: parseInt(row, 10), col: parseInt(col, 10) };
     }
 
-    function seatLabel(side, row, col, leftCount) {
-      const letter = String.fromCharCode(65 + row);  // A, B, C, ...
+    function getRowLetterMap(layout) {
+      // 빈 행(좌석 0개)은 letter 미할당. 좌석 있는 행에만 A부터 순서대로 부여.
+      const map = {};
+      let idx = 0;
+      for (let r = 0; r < layout.left.length; r++) {
+        if ((layout.left[r] || 0) + (layout.right[r] || 0) > 0) {
+          map[r] = String.fromCharCode(65 + idx);
+          idx++;
+        }
+      }
+      return map;
+    }
+
+    function seatLabel(letter, side, col, leftCount) {
       const num = side === 'left' ? col + 1 : leftCount + col + 1;
       return `${letter}${String(num).padStart(2, '0')}`;
     }
@@ -415,6 +424,8 @@
       const maxRight = Math.max(1, ...state.layout.right);
       grid.style.setProperty('--max-left', String(maxLeft));
       grid.style.setProperty('--max-right', String(maxRight));
+      // 빈 행 건너뛰지 않고 좌석 있는 행에만 A,B,C... 부여 (레이아웃 편집 시 매 렌더 새로 계산)
+      const letterMap = getRowLetterMap(state.layout);
       const rows = state.layout.left.length;  // 9
       for (let r = 0; r < rows; r++) {
         const leftCount = state.layout.left[r];
@@ -425,14 +436,14 @@
 
         const leftSide = document.createElement('div');
         leftSide.className = 'side-cells side-left';
-        for (let c = 0; c < leftCount; c++) leftSide.appendChild(makeSeatCell('left', r, c, leftCount));
+        for (let c = 0; c < leftCount; c++) leftSide.appendChild(makeSeatCell('left', r, c, leftCount, letterMap[r]));
 
         const aisle = document.createElement('div');
         aisle.className = 'aisle';
 
         const rightSide = document.createElement('div');
         rightSide.className = 'side-cells side-right';
-        for (let c = 0; c < rightCount; c++) rightSide.appendChild(makeSeatCell('right', r, c, leftCount));
+        for (let c = 0; c < rightCount; c++) rightSide.appendChild(makeSeatCell('right', r, c, leftCount, letterMap[r]));
 
         rowEl.appendChild(leftSide);
         rowEl.appendChild(aisle);
@@ -441,7 +452,7 @@
       }
     }
 
-    function makeSeatCell(side, row, col, leftCount) {
+    function makeSeatCell(side, row, col, leftCount, letter) {
       const key = seatKey(side, row, col);
       const cell = document.createElement('div');
       cell.className = 'seat-cell';
@@ -449,7 +460,7 @@
 
       const labelEl = document.createElement('span');
       labelEl.className = 'seat-number';
-      labelEl.textContent = seatLabel(side, row, col, leftCount);
+      labelEl.textContent = letter ? seatLabel(letter, side, col, leftCount) : '';
       cell.appendChild(labelEl);
 
       const memberId = state.assignments[key];
