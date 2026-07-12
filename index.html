@@ -215,6 +215,15 @@
 
     let storageAvailable = true;
 
+    // 저장 데이터가 현재 스키마 형태인지 검증 (유효한 JSON이어도 필드가 깨져 있으면 초기화)
+    function isValidState(s) {
+      return !!s && typeof s === 'object'
+        && Array.isArray(s.members)
+        && s.members.every(m => m && typeof m.id === 'string' && typeof m.name === 'string')
+        && !!s.layout && Array.isArray(s.layout.left) && Array.isArray(s.layout.right)
+        && !!s.assignments && typeof s.assignments === 'object' && !Array.isArray(s.assignments);
+    }
+
     function loadState() {
       // 시크릿 모드 등 localStorage 사용 불가 환경을 즉시 감지 (probe write)
       try {
@@ -227,7 +236,13 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return initialState();
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!isValidState(parsed)) {
+          try { localStorage.setItem(STORAGE_KEY + '.broken', raw); } catch (_) {}
+          console.warn('저장 데이터 형식이 맞지 않습니다. 초기화합니다.');
+          return initialState();
+        }
+        return parsed;
       } catch (e) {
         if (e && e.name !== 'SecurityError') {
           try {
@@ -706,6 +721,15 @@
         },
 
         () => {
+          assert(isValidState(initialState()) === true, 'isValidState 정상 state');
+          assert(isValidState(null) === false, 'isValidState null');
+          assert(isValidState({}) === false, 'isValidState 빈 객체');
+          assert(isValidState({ members: [], layout: { left: [], right: [] } }) === false, 'isValidState assignments 누락');
+          assert(isValidState({ members: [{ id: 1, name: '김' }], layout: { left: [], right: [] }, assignments: {} }) === false, 'isValidState 멤버 id 타입 오류');
+          assert(isValidState({ members: [], layout: { left: [], right: [] }, assignments: [] }) === false, 'isValidState assignments 배열 거부');
+        },
+
+        () => {
           const s0 = { members: [], layout: INITIAL_LAYOUT, assignments: {} };
           const s1 = reduce(s0, { type: 'ADD_MEMBER', name: '테스트', memo: '' });
           assert(s1.members.length === 1 && s1.members[0].name === '테스트', 'ADD_MEMBER');
@@ -933,8 +957,7 @@
         const targetOccupied = !!state.assignments[targetKey];
 
         if (payload.kind === 'member') {
-          // 단원 → 좌석: 점유면 기존 단원 먼저 해제 후 배치
-          if (targetOccupied) dispatch({ type: 'UNASSIGN', seatKey: targetKey });
+          // 단원 → 좌석: ASSIGN이 좌석을 덮어쓰므로 점유 좌석의 기존 단원은 자동 명단 복귀
           dispatch({ type: 'ASSIGN', seatKey: targetKey, memberId: payload.memberId });
         } else if (payload.kind === 'seat') {
           // 같은 좌석에 자신 드롭 시 무시

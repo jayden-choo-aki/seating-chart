@@ -174,3 +174,11 @@
   - § 8 산출물 위치: history 파일명, Repo/Live URL 추가
   - § 9 v1.2 변경사항 새 섹션 (기존 9→10 재번호)
 - v1.1 배포 준비 완료
+
+## 2026-07-12 — v1.2.1 코드 리뷰 반영
+- **loadState 스키마 검증**: `isValidState` 헬퍼 추가
+  - 문제: 저장 데이터가 유효한 JSON이지만 필드가 깨진 경우(스키마 변경·부분 손상) 첫 렌더에서 크래시
+  - 수정: 파싱 후 `members`/`layout.left`/`layout.right`/`assignments` 형태 검증, 실패 시 `.broken` 백업 후 초기 state 폴백
+- **드롭 이중 dispatch 제거**: 점유 좌석에 단원 드롭 시 `UNASSIGN`+`ASSIGN` 2회 → `ASSIGN` 1회 (ASSIGN이 좌석을 덮어쓰므로 동작 동일, render/save 1회로 감소)
+- **README v1.2 UX 반영**: × 버튼 안내 제거 → 더블클릭/더블탭 해제, 길게 누르기 수정 모달로 갱신, 수동 체크리스트 동기화
+- 자가테스트 22/22 통과 (isValidState 케이스 추가)
