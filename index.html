@@ -357,6 +357,25 @@
         case 'RESET_ASSIGNMENTS': {
           return { ...s, assignments: {} };
         }
+        case 'RANDOM_ASSIGN': {
+          // 단원을 무작위로 섞어 좌석 순서(행별 left→right)대로 앞에서부터 배정.
+          // 좌석보다 단원이 많으면 넘치는 단원은 미배치로 남는다.
+          const seats = [];
+          const rowCount = Math.max(s.layout.left.length, s.layout.right.length);
+          for (let row = 0; row < rowCount; row++) {
+            for (let col = 0; col < (s.layout.left[row] || 0); col++) seats.push(seatKey('left', row, col));
+            for (let col = 0; col < (s.layout.right[row] || 0); col++) seats.push(seatKey('right', row, col));
+          }
+          const shuffled = [...s.members];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+          const next = {};
+          const n = Math.min(seats.length, shuffled.length);
+          for (let i = 0; i < n; i++) next[seats[i]] = shuffled[i].id;
+          return { ...s, assignments: next };
+        }
         case 'UPDATE_LAYOUT': {
           // action.layout이 있으면 양쪽 동시 갱신, 없으면 기존처럼 한쪽만
           const newLayout = action.layout
@@ -405,11 +424,16 @@
       el.innerHTML = `
         <button type="button" id="tb-add-member">+ 단원 추가</button>
         <button type="button" id="tb-edit-layout">레이아웃 편집</button>
+        <button type="button" id="tb-random">🎲 랜덤배치</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
       `;
       el.querySelector('#tb-add-member').onclick = () => openMemberModal(null);
       el.querySelector('#tb-edit-layout').onclick = openLayoutModal;
+      el.querySelector('#tb-random').onclick = () => {
+        clearSelection();
+        dispatch({ type: 'RANDOM_ASSIGN' });
+      };
       el.querySelector('#tb-png').onclick = downloadPng;
       el.querySelector('#tb-reset').onclick = () => {
         if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
@@ -793,6 +817,22 @@
           };
           const s1 = reduce(s0, { type: 'DELETE_MEMBER', id: 'a' });
           assert(Object.keys(s1.assignments).length === 0, 'DELETE_MEMBER가 배치도 해제');
+        },
+        () => {
+          const ms = Array.from({ length: 5 }, (_, i) => ({ id: 'm' + i, name: '단원' + i }));
+          const s0 = { members: ms, layout: { left: [2, 1], right: [1, 0] }, assignments: { 'left-0-0': 'm4' } };
+          const s1 = reduce(s0, { type: 'RANDOM_ASSIGN' });
+          const keys = Object.keys(s1.assignments);
+          assert(keys.length === 4, 'RANDOM_ASSIGN 좌석 수만큼만 배정 (단원 5 > 좌석 4)');
+          assert(new Set(Object.values(s1.assignments)).size === 4, 'RANDOM_ASSIGN 중복 배정 없음');
+          const valid = new Set(['left-0-0', 'left-0-1', 'left-1-0', 'right-0-0']);
+          assert(keys.every(k => valid.has(k)), 'RANDOM_ASSIGN 좌석 키가 레이아웃 범위 내');
+        },
+        () => {
+          const s0 = { members: [{ id: 'a', name: '김' }, { id: 'b', name: '박' }], layout: INITIAL_LAYOUT, assignments: {} };
+          const s1 = reduce(s0, { type: 'RANDOM_ASSIGN' });
+          assert(Object.keys(s1.assignments).length === 2
+            && new Set(Object.values(s1.assignments)).size === 2, 'RANDOM_ASSIGN 전원 배정 (좌석 여유)');
         },
         () => {
           const s0 = { members: [{id:'a',name:'김'},{id:'b',name:'박'}], layout: INITIAL_LAYOUT, assignments: {} };
