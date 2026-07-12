@@ -9,3 +9,6 @@
 .idea/
 *.swp
 *.swo
+
+# Claude Code 로컬 로그
+.claude/logs/
