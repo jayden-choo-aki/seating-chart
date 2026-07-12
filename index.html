@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>4부 찬양대 베이스 배치도</title>
+  <!-- PWA (GitHub Pages 배포 시 홈 화면 추가 + 오프라인 실행). file://로 열면 무시됨 -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1a3a6b">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="베이스 배치도">
   <!-- html2canvas 1.4.1 인라인 (오프라인 동작용) -->
   <script id="html2canvas-lib">
 /*!
@@ -826,6 +834,13 @@
 
     if (new URL(location.href).searchParams.get('test') === '1') {
       document.addEventListener('DOMContentLoaded', runSelfTests);
+    }
+
+    // 서비스 워커 등록 (오프라인 실행용). file:// 더블클릭 사용 시에는 조건이 걸러서 기존 동작 그대로.
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('서비스 워커 등록 실패:', e));
+      });
     }
 
     document.addEventListener('DOMContentLoaded', () => {

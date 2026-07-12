@@ -1,0 +1,17 @@
+{
+  "name": "4부 찬양대 베이스 배치도",
+  "short_name": "베이스 배치도",
+  "description": "교회 성가대 좌석 배치를 편집·저장·이미지로 공유하는 오프라인 도구",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "ko",
+  "background_color": "#f5f5f5",
+  "theme_color": "#1a3a6b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
