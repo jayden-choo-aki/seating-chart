@@ -138,8 +138,7 @@
   </style>
 </head>
 <body>
-  <!-- 배포 시 아래 버전 표기를 올려 기기에서 어떤 버전이 실행 중인지 확인할 수 있게 한다 -->
-  <h1>4부 찬양대 베이스 배치도 <small style="font-size:11px; color:#999; font-weight:normal;">v3</small></h1>
+  <h1>4부 찬양대 베이스 배치도</h1>
   <noscript>
     <div style="background:#e8f0fe; border:1px solid #1a3a6b; padding:16px; margin:12px 0; border-radius:8px; color:#1a3a6b; font-size:16px; line-height:1.6;">
       <strong>📢 여기서는 배치도가 실행되지 않습니다.</strong><br>
@@ -167,6 +166,9 @@
   </div>
   <script>
     // === 상수 ===
+
+    // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
+    console.log('베이스 배치도 v3');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
