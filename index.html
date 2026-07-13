@@ -435,6 +435,7 @@
         <button type="button" id="tb-edit-layout">레이아웃 편집</button>
         <button type="button" id="tb-random">🎲 랜덤배치</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
+        ${location.protocol === 'file:' ? '' : '<button type="button" id="tb-save-html">HTML 다운로드</button>'}
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
       `;
       el.querySelector('#tb-add-member').onclick = () => openMemberModal(null);
@@ -444,6 +445,13 @@
         dispatch({ type: 'RANDOM_ASSIGN' });
       };
       el.querySelector('#tb-png').onclick = downloadPng;
+      const saveHtmlBtn = el.querySelector('#tb-save-html');
+      if (saveHtmlBtn) saveHtmlBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = 'index.html';
+        a.download = '베이스배치도.html';
+        a.click();
+      };
       el.querySelector('#tb-reset').onclick = () => {
         if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
           dispatch({ type: 'RESET_ASSIGNMENTS' });
