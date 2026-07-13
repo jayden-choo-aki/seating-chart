@@ -440,6 +440,7 @@
         <button type="button" id="tb-random">🎲 랜덤배치</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
+        <button type="button" id="tb-help">📖 사용법</button>
       `;
       el.querySelector('#tb-add-member').onclick = () => openMemberModal(null);
       el.querySelector('#tb-edit-layout').onclick = openLayoutModal;
@@ -448,6 +449,7 @@
         dispatch({ type: 'RANDOM_ASSIGN' });
       };
       el.querySelector('#tb-png').onclick = downloadPng;
+      el.querySelector('#tb-help').onclick = openManualModal;
       el.querySelector('#tb-reset').onclick = () => {
         if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
           dispatch({ type: 'RESET_ASSIGNMENTS' });
@@ -773,6 +775,69 @@
           dispatch({ type: 'UPDATE_LAYOUT', layout: cur });
           closeModal();
         };
+      });
+    }
+
+    function openManualModal() {
+      const h4 = 'margin:14px 0 6px; font-size:14px;';
+      const list = 'margin:0; padding-left:20px;';
+      const tip = 'color:#555; font-size:12px;';
+      openModal(`
+        <h3 style="margin:0 0 8px;">📖 사용법</h3>
+        <div style="max-height:65vh; overflow-y:auto; font-size:13px; line-height:1.6; padding-right:4px;">
+
+          <h4 style="${h4} margin-top:0;">📱 홈 화면에 추가 — 오프라인에서도 사용</h4>
+          <ol style="${list}">
+            <li>인터넷이 되는 곳에서 <b>Safari로</b> 접속:<br>
+              <span style="word-break:break-all;">https://jayden-choo-aki.github.io/seating-chart/</span><br>
+              <span style="${tip}">카카오톡에서 링크를 열었다면 하단 메뉴(⋯) → <b>"Safari로 열기"</b>를 먼저 누르세요. 카톡 안에서는 홈 화면 추가가 안 됩니다.</span></li>
+            <li>화면 하단 가운데 <b>공유 버튼(⬆︎)</b> → 아래로 스크롤 → <b>"홈 화면에 추가"</b> → <b>"추가"</b></li>
+            <li>이후에는 홈 화면의 <b>"베이스 배치도"</b> 아이콘으로 실행 — <b>인터넷이 전혀 없는 곳에서도 동작</b>합니다. 온라인 상태에서 열면 최신 버전으로 자동 갱신됩니다.</li>
+          </ol>
+          <p style="${tip} margin:4px 0 0;">안드로이드: Chrome으로 접속 → 메뉴(⋮) → "홈 화면에 추가"</p>
+
+          <h4 style="${h4}">🪑 좌석 배치</h4>
+          <ul style="${list}">
+            <li>왼쪽 명단에서 <b>단원 카드를 클릭</b>(선택) → <b>빈 좌석을 클릭</b>하면 배치됩니다.</li>
+            <li>PC에서는 카드를 좌석으로 <b>드래그&드롭</b>해도 됩니다.</li>
+            <li><b>🎲 랜덤배치</b>: 누를 때마다 전체 단원을 무작위로 다시 배치합니다.</li>
+            <li>ㄱ~ㅎ 버튼으로 명단을 <b>초성 필터</b>할 수 있습니다.</li>
+          </ul>
+
+          <h4 style="${h4}">🔄 좌석 이동·교체 (스위치)</h4>
+          <ul style="${list}">
+            <li>배치된 좌석을 <b>클릭해 선택</b> → <b>빈 좌석 클릭</b> = 그 자리로 이동</li>
+            <li>배치된 좌석을 <b>클릭해 선택</b> → <b>다른 배치된 좌석 클릭</b> = 두 사람 자리 교체</li>
+            <li>PC에서는 좌석끼리 드래그해도 교체됩니다.</li>
+          </ul>
+
+          <h4 style="${h4}">✏️ 배치 해제·이름 수정</h4>
+          <ul style="${list}">
+            <li>배치된 좌석 <b>더블클릭</b>(모바일: 빠르게 두 번 탭) = 배치 해제(명단으로 복귀)</li>
+            <li>좌석이나 카드를 <b>길게 누르기(0.5초)</b> = 이름/메모 수정</li>
+            <li><b>초기화</b> 버튼 = 좌석 배치만 전부 해제 (단원 명단과 레이아웃은 유지)</li>
+          </ul>
+
+          <h4 style="${h4}">💬 카톡으로 이미지 공유</h4>
+          <ol style="${list}">
+            <li><b>[PNG 다운로드]</b> 버튼을 누르면 배치도 이미지 미리보기가 뜹니다.</li>
+            <li><b>[공유]</b> 버튼 → 카카오톡 선택 → 보낼 채팅방 선택. (공유 버튼으로 사진 앱에 저장도 가능)</li>
+            <li>공유 버튼이 없거나 동작하지 않으면: 미리보기 이미지를 <b>길게 눌러</b>(모바일) "사진에 저장", 또는 <b>[파일로 저장]</b>(PC).</li>
+          </ol>
+
+          <h4 style="${h4}">💾 저장 안내</h4>
+          <ul style="${list}">
+            <li>모든 변경은 <b>이 기기의 브라우저에 자동 저장</b>됩니다. 따로 저장 버튼이 없습니다.</li>
+            <li>다른 기기와는 공유되지 않으므로, 완성본은 이미지로 공유하세요.</li>
+            <li>시크릿(사생활 보호) 모드에서는 저장되지 않습니다 — 상단에 경고가 표시됩니다.</li>
+          </ul>
+
+        </div>
+        <div style="text-align:right; margin-top:10px;">
+          <button type="button" id="manual-close">닫기</button>
+        </div>
+      `, (box) => {
+        box.querySelector('#manual-close').onclick = closeModal;
       });
     }
 
