@@ -168,7 +168,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v3');
+    console.log('베이스 배치도 v4');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -439,7 +439,6 @@
         <button type="button" id="tb-edit-layout">레이아웃 편집</button>
         <button type="button" id="tb-random">🎲 랜덤배치</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
-        ${location.protocol === 'file:' ? '' : '<button type="button" id="tb-save-html">HTML 다운로드</button>'}
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
       `;
       el.querySelector('#tb-add-member').onclick = () => openMemberModal(null);
@@ -449,13 +448,6 @@
         dispatch({ type: 'RANDOM_ASSIGN' });
       };
       el.querySelector('#tb-png').onclick = downloadPng;
-      const saveHtmlBtn = el.querySelector('#tb-save-html');
-      if (saveHtmlBtn) saveHtmlBtn.onclick = () => {
-        const a = document.createElement('a');
-        a.href = 'index.html';
-        a.download = '베이스배치도.html';
-        a.click();
-      };
       el.querySelector('#tb-reset').onclick = () => {
         if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
           dispatch({ type: 'RESET_ASSIGNMENTS' });
@@ -682,33 +674,33 @@
       }
     }
 
-    // 홈 화면 설치형(standalone) 앱에서는 iOS가 <a download>를 지원하지 않아
-    // 공유 시트(사진에 저장/카톡 공유)를 먼저 시도하고, 안 되면 길게 눌러 저장 안내로 대체한다.
+    // <a download>는 환경별 편차가 큼(설치형 앱·iOS 서드파티 브라우저에서는 미동작,
+    // 실패해도 감지 불가). 항상 미리보기 모달을 띄우고 모달 안에서 저장/공유를 처리해
+    // 어떤 환경에서도 무반응이 없도록 한다.
     async function savePng(canvas) {
       const name = `seating-chart-${timestamp()}.png`;
-      const standalone = navigator.standalone === true ||
-        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-      if (!standalone) {
-        const a = document.createElement('a');
-        a.href = canvas.toDataURL('image/png');
-        a.download = name;
-        document.body.appendChild(a); a.click(); a.remove();
-        return;
-      }
-      // 버튼 클릭 시점의 사용자 제스처가 렌더링 대기 중 만료되면 navigator.share가
-      // 거부되므로, 항상 미리보기 모달을 띄우고 모달 안의 [공유] 버튼(새 제스처)으로 공유한다.
       const dataUrl = canvas.toDataURL('image/png');
       const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
       const file = blob ? new File([blob], name, { type: 'image/png' }) : null;
       const canShareFile = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
       openModal(`
-        <p style="margin:0 0 8px; font-weight:bold;">이미지를 길게 눌러 "사진에 저장"하거나 [공유] 버튼을 누르세요.</p>
+        <p style="margin:0 0 8px; font-weight:bold;">이미지가 완성되었습니다.</p>
         <img src="${dataUrl}" alt="배치도 이미지" style="max-width:100%; height:auto; border:1px solid #ccc;">
+        <p style="margin:8px 0 0; font-size:13px; color:#555;">
+          버튼이 동작하지 않으면 이미지를 길게 누르거나(모바일) 마우스 오른쪽 클릭(PC) 후 "이미지 저장"을 선택하세요.
+        </p>
         <div style="text-align:right; margin-top:8px;">
           ${canShareFile ? '<button type="button" id="png-share">공유 (사진 저장/카톡)</button>' : ''}
+          <button type="button" id="png-download">파일로 저장</button>
           <button type="button" id="png-modal-close">닫기</button>
         </div>
       `, (box) => {
+        box.querySelector('#png-download').onclick = () => {
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          a.download = name;
+          document.body.appendChild(a); a.click(); a.remove();
+        };
         const shareBtn = box.querySelector('#png-share');
         if (shareBtn) shareBtn.onclick = async () => {
           try { await navigator.share({ files: [file] }); } catch (e) { /* 사용자가 공유 시트를 닫음 */ }
