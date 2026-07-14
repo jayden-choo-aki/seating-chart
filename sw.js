@@ -1,6 +1,6 @@
 // 오프라인 캐시 서비스 워커
 // 배포 시 index.html 내용이 바뀌면 아래 버전을 올려야 기존 설치 기기에 새 캐시가 내려간다.
-const CACHE = 'seating-chart-v4';
+const CACHE = 'seating-chart-v5';
 const ASSETS = [
   './',
   './index.html',
