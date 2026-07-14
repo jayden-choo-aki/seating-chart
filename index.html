@@ -101,6 +101,19 @@
     .seat-cell.standby { background: #fffdf5; border-color: #d9c27a; }
     .seat-cell.standby.occupied { background: #fff3d6; border-style: solid; border-color: #e0b954; }
 
+    /* 저장/공유 완료 피드백 토스트 */
+    .toast {
+      position: fixed; left: 50%; bottom: 32px;
+      transform: translateX(-50%) translateY(8px);
+      background: rgba(20, 20, 20, 0.88); color: #fff;
+      padding: 10px 18px; border-radius: 22px;
+      font-size: 14px; line-height: 1.4;
+      max-width: 90vw; text-align: center;
+      opacity: 0; transition: opacity .25s, transform .25s;
+      z-index: 100; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
     @media (max-width: 768px) {
       body { padding: 8px; }
       h1 { font-size: 16px; }
@@ -171,7 +184,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v7');
+    console.log('베이스 배치도 v8');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -755,7 +768,20 @@
       }
     }
 
-    // <a download>는 환경별 편차가 큼(설치형 앱·iOS 서드파티 브라우저에서는 미동작,
+    // 저장/공유 완료 피드백 토스트 (2.8초 후 자동 소멸)
+    function showToast(msg) {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      requestAnimationFrame(() => t.classList.add('show'));
+      setTimeout(() => {
+        t.classList.remove('show');
+        setTimeout(() => t.remove(), 300);
+      }, 2800);
+    }
+
+    // <a download>는 환경별 편차가 큼(iOS 설치형 앱·서드파티 브라우저에서는 무반응,
     // 실패해도 감지 불가). 항상 미리보기 모달을 띄우고 모달 안에서 저장/공유를 처리해
     // 어떤 환경에서도 무반응이 없도록 한다.
     async function savePng(canvas) {
@@ -764,27 +790,40 @@
       const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
       const file = blob ? new File([blob], name, { type: 'image/png' }) : null;
       const canShareFile = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+      // iOS에서는 <a download>가 동작하지 않는 환경이 많음(다운로드 대화상자의 "보기"/"다운로드"
+      // 무반응 포함) → 공유 시트가 있으면 그쪽으로만 유도 (사진 저장·파일에 저장·카톡 모두 가능)
+      const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+      const showDownload = !(isIos && canShareFile);
       openModal(`
         <p style="margin:0 0 8px; font-weight:bold;">이미지가 완성되었습니다.</p>
         <img src="${dataUrl}" alt="배치도 이미지" style="max-width:100%; height:auto; border:1px solid #ccc;">
         <p style="margin:8px 0 0; font-size:13px; color:#555;">
-          버튼이 동작하지 않으면 이미지를 길게 누르거나(모바일) 마우스 오른쪽 클릭(PC) 후 "이미지 저장"을 선택하세요.
+          버튼이 동작하지 않으면 위 이미지를 길게 누르거나(모바일) 마우스 오른쪽 클릭(PC) 후 "이미지 저장"을 선택하세요.
         </p>
         <div style="text-align:right; margin-top:8px;">
-          ${canShareFile ? '<button type="button" id="png-share">공유 (사진 저장/카톡)</button>' : ''}
-          <button type="button" id="png-download">파일로 저장</button>
+          ${canShareFile ? '<button type="button" id="png-share">📷 사진 저장 / 카톡 공유</button>' : ''}
+          ${showDownload ? '<button type="button" id="png-download">파일로 저장</button>' : ''}
           <button type="button" id="png-modal-close">닫기</button>
         </div>
       `, (box) => {
-        box.querySelector('#png-download').onclick = () => {
+        const dlBtn = box.querySelector('#png-download');
+        if (dlBtn) dlBtn.onclick = () => {
           const a = document.createElement('a');
-          a.href = dataUrl;
+          // data: URL은 대용량에서 실패하는 브라우저가 있어 blob URL 우선
+          const url = blob ? URL.createObjectURL(blob) : dataUrl;
+          a.href = url;
           a.download = name;
           document.body.appendChild(a); a.click(); a.remove();
+          if (blob) setTimeout(() => URL.revokeObjectURL(url), 10000);
+          showToast(`💾 다운로드를 시작했습니다: ${name}`);
         };
         const shareBtn = box.querySelector('#png-share');
         if (shareBtn) shareBtn.onclick = async () => {
-          try { await navigator.share({ files: [file] }); } catch (e) { /* 사용자가 공유 시트를 닫음 */ }
+          try {
+            await navigator.share({ files: [file] });
+            showToast('✅ 완료! "이미지 저장"을 선택했다면 사진 앱에 저장되었습니다.');
+          } catch (e) { /* 사용자가 공유 시트를 닫음 */ }
         };
         box.querySelector('#png-modal-close').onclick = closeModal;
       });
