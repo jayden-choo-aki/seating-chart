@@ -121,8 +121,8 @@
       .standby-zone { gap: 3px; }
     }
 
-    /* PNG 캡처: 콘텐츠 폭에 맞춰 좌우 빈 여백 제거 */
-    #seat-area.capture-mode { width: max-content; }
+    /* PNG 캡처: 콘텐츠 폭에 맞추되 좌우에 보기 좋은 여백 확보 */
+    #seat-area.capture-mode { width: max-content; padding-left: 28px; padding-right: 28px; }
     #seat-area.capture-mode .seat-row {
       grid-template-columns:
         calc(var(--max-left, 1) * 56px + (var(--max-left, 1) - 1) * 4px)
@@ -130,6 +130,7 @@
         calc(var(--max-right, 1) * 56px + (var(--max-right, 1) - 1) * 4px);
     }
     @media (max-width: 768px) {
+      #seat-area.capture-mode { padding-left: 20px; padding-right: 20px; }
       #seat-area.capture-mode .seat-row {
         grid-template-columns:
           calc(var(--max-left, 1) * 44px + (var(--max-left, 1) - 1) * 3px)
@@ -170,7 +171,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v6');
+    console.log('베이스 배치도 v7');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
