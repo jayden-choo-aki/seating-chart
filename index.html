@@ -70,6 +70,11 @@
     .seat-row .side-right { justify-content: flex-start; }
     .seat-row .aisle { width: 24px; }
     .seat-row.empty-row { min-height: 16px; }
+    /* 통로 기준 구역 라벨: 왼쪽 = B석, 오른쪽 = A석 */
+    .seat-row.side-header { min-height: auto; margin-bottom: 6px; }
+    .seat-row.side-header .side-label {
+      text-align: center; font-size: 13px; font-weight: 600; color: #555;
+    }
 
     .seat-cell {
       width: 56px; height: 28px;
@@ -82,27 +87,10 @@
     }
     .seat-cell.occupied { background: #e9f1ff; border-style: solid; border-color: #b3cdf6; }
     .seat-cell.selected { outline: 2px solid #1a73e8; }
-    /* 빈 좌석: 가운데 큰 자리번호 (워터마크) */
-    .seat-cell .seat-number {
-      position: absolute; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; color: #b8b8b8;
-      letter-spacing: 0.05em; pointer-events: none;
-    }
-    /* 점유 좌석: 좌상단 미니 라벨로 이동 → 이름과 시야 분리 */
-    .seat-cell.occupied .seat-number {
-      inset: auto;
-      top: 1px; left: 3px;
-      display: block;
-      font-size: 8px;
-      color: #6b8fb8;
-      letter-spacing: 0;
-      line-height: 1;
-    }
     .seat-cell .seat-name { font-size: 12px; line-height: 1.1; }
     .seat-cell .seat-memo { font-size: 9px; line-height: 1; color: #666; }
 
-    /* 보조석: 본좌석(파랑)과 구분되는 연주황 계열 */
+    /* E석: 본좌석(파랑)과 구분되는 연주황 계열 */
     .standby-header {
       margin: 12px 0 6px; padding-top: 10px;
       border-top: 1px dashed #ccc;
@@ -112,16 +100,12 @@
     .standby-zone { display: grid; gap: 4px; justify-content: center; }
     .seat-cell.standby { background: #fffdf5; border-color: #d9c27a; }
     .seat-cell.standby.occupied { background: #fff3d6; border-style: solid; border-color: #e0b954; }
-    .seat-cell.standby .seat-number { color: #cdb56b; }
-    .seat-cell.standby.occupied .seat-number { color: #a8862f; }
 
     @media (max-width: 768px) {
       body { padding: 8px; }
       h1 { font-size: 16px; }
       #seat-area { padding: 8px; }
       .seat-cell { width: 44px; height: 26px; font-size: 11px; }
-      .seat-cell .seat-number { font-size: 10px; }
-      .seat-cell.occupied .seat-number { font-size: 7px; top: 1px; left: 2px; }
       .seat-cell .seat-name { font-size: 11px; }
       .seat-cell .seat-memo { font-size: 8px; }
       /* 모든 행이 동일한 컬럼 너비 공유 → A~G 6번 좌석과 H,I 7번 좌석 우측 정렬 일치 */
@@ -186,7 +170,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v5');
+    console.log('베이스 배치도 v6');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -194,6 +178,10 @@
       left:  [6, 6, 6, 0, 6, 6, 0, 7, 7],
       right: [2, 3, 0, 0, 4, 4, 0, 4, 5]
     };
+
+    // E석(구 보조석): 잔여 인원수와 무관하게 5열×3행 고정 표시
+    const E_SEAT_COLS = 5;
+    const E_SEAT_ROWS = 3;
 
     const SEED_MEMBERS = [
       '권형국','김경환','김광은','김기동','김무선','김병호','김삼만','김성재','김수명','김점율',
@@ -240,24 +228,6 @@
       return { side, row: parseInt(row, 10), col: parseInt(col, 10) };
     }
 
-    function getRowLetterMap(layout) {
-      // 빈 행(좌석 0개)은 letter 미할당. 좌석 있는 행에만 A부터 순서대로 부여.
-      const map = {};
-      let idx = 0;
-      for (let r = 0; r < layout.left.length; r++) {
-        if ((layout.left[r] || 0) + (layout.right[r] || 0) > 0) {
-          map[r] = String.fromCharCode(65 + idx);
-          idx++;
-        }
-      }
-      return map;
-    }
-
-    function seatLabel(letter, side, col, leftCount) {
-      const num = side === 'left' ? col + 1 : leftCount + col + 1;
-      return `${letter}${String(num).padStart(2, '0')}`;
-    }
-
     function getTotalSeats(layout) {
       return [...layout.left, ...layout.right].reduce((a, b) => a + b, 0);
     }
@@ -267,26 +237,20 @@
       return members.filter(m => !assigned.has(m.id));
     }
 
-    // === 보조석 (만석 초과 인원) ===
+    // === E석 (구 보조석) ===
 
     function isStandbyKey(key) { return key.startsWith('standby-'); }
 
-    function getOverflowCount(members, layout) {
-      return Math.max(0, members.length - getTotalSeats(layout));
-    }
-
-    // 표시 칸 수: 초과 인원만큼 + 점유 중인 칸은 초과 인원이 줄어도 유지 (배치 소실 금지)
-    function getStandbyCellCount(overflow, assignments) {
+    // 표시 칸 수: 고정 칸 수 기본 + 고정 범위 밖 점유 칸은 유지 (배치 소실 금지)
+    function getStandbyCellCount(minCells, assignments) {
       let maxIdx = -1;
       for (const k of Object.keys(assignments)) {
         if (!isStandbyKey(k)) continue;
         const { col } = parseSeatKey(k);
         if (col > maxIdx) maxIdx = col;
       }
-      return Math.max(overflow, maxIdx + 1);
+      return Math.max(minCells, maxIdx + 1);
     }
-
-    function standbyLabel(i) { return '보' + String(i + 1).padStart(2, '0'); }
 
     function validateLayout(layout, memberCount) {
       const totalSeats = getTotalSeats(layout);
@@ -310,7 +274,7 @@
         layout: {
           left:  [...INITIAL_LAYOUT.left],
           right: [...INITIAL_LAYOUT.right],
-          standbyCols: 7
+          standbyCols: 7  // 구버전 스키마 호환 필드 — E석 렌더는 5×3 고정이라 미사용
         },
         assignments: {}
       };
@@ -382,7 +346,7 @@
         }
         next = { ...next, seedVersion: 3 };
       }
-      // 구버전 layout에 보조석 열 수 기본값 보정
+      // 구버전 layout에 standbyCols 기본값 보정 (스키마 호환용 — 렌더에서는 미사용)
       if (!next.layout.standbyCols) {
         next = { ...next, layout: { ...next.layout, standbyCols: 7 } };
       }
@@ -445,7 +409,7 @@
         case 'RANDOM_ASSIGN': {
           // 단원을 무작위로 섞어 좌석 순서(행별 left→right)대로 앞에서부터 배정.
           // 좌석보다 단원이 많으면 넘치는 단원은 미배치로 남는다.
-          // 보조석 배치는 수동 관리 영역이므로 유지하고, 해당 단원은 셔플에서 제외.
+          // E석 배치는 수동 관리 영역이므로 유지하고, 해당 단원은 셔플에서 제외.
           const seats = [];
           const rowCount = Math.max(s.layout.left.length, s.layout.right.length);
           for (let row = 0; row < rowCount; row++) {
@@ -474,7 +438,7 @@
             : { ...s.layout, [action.side]: [...action.rowCounts] };
           const next = {};
           for (const [k, v] of Object.entries(s.assignments)) {
-            // 보조석은 선형 인덱스 키 → 본좌석 축소·열 수 변경의 영향 없음
+            // E석은 선형 인덱스 키 → 본좌석 축소의 영향 없음
             if (isStandbyKey(k)) { next[k] = v; continue; }
             const { side, row, col } = parseSeatKey(k);
             const count = (newLayout[side] || [])[row] || 0;
@@ -571,7 +535,7 @@
       }
       const unassigned = total - main - standby;
       document.getElementById('member-counter').textContent =
-        `본석 ${main} / 보조석 ${standby} / 미배치 ${unassigned} / 총 ${total}명`;
+        `A·B석 ${main} / E석 ${standby} / 미배치 ${unassigned} / 총 ${total}명`;
     }
 
     function renderMemberList() {
@@ -608,8 +572,23 @@
       const maxRight = Math.max(1, ...state.layout.right);
       grid.style.setProperty('--max-left', String(maxLeft));
       grid.style.setProperty('--max-right', String(maxRight));
-      // 빈 행 건너뛰지 않고 좌석 있는 행에만 A,B,C... 부여 (레이아웃 편집 시 매 렌더 새로 계산)
-      const letterMap = getRowLetterMap(state.layout);
+
+      // 구역 라벨: 통로 기준 왼쪽 = B석, 오른쪽 = A석
+      const headerRow = document.createElement('div');
+      headerRow.className = 'seat-row side-header';
+      const leftLabel = document.createElement('div');
+      leftLabel.className = 'side-label';
+      leftLabel.textContent = 'B석';
+      const headerAisle = document.createElement('div');
+      headerAisle.className = 'aisle';
+      const rightLabel = document.createElement('div');
+      rightLabel.className = 'side-label';
+      rightLabel.textContent = 'A석';
+      headerRow.appendChild(leftLabel);
+      headerRow.appendChild(headerAisle);
+      headerRow.appendChild(rightLabel);
+      grid.appendChild(headerRow);
+
       const rows = state.layout.left.length;  // 9
       for (let r = 0; r < rows; r++) {
         const leftCount = state.layout.left[r];
@@ -620,14 +599,14 @@
 
         const leftSide = document.createElement('div');
         leftSide.className = 'side-cells side-left';
-        for (let c = 0; c < leftCount; c++) leftSide.appendChild(makeSeatCell('left', r, c, leftCount, letterMap[r]));
+        for (let c = 0; c < leftCount; c++) leftSide.appendChild(buildSeatCell(seatKey('left', r, c)));
 
         const aisle = document.createElement('div');
         aisle.className = 'aisle';
 
         const rightSide = document.createElement('div');
         rightSide.className = 'side-cells side-right';
-        for (let c = 0; c < rightCount; c++) rightSide.appendChild(makeSeatCell('right', r, c, leftCount, letterMap[r]));
+        for (let c = 0; c < rightCount; c++) rightSide.appendChild(buildSeatCell(seatKey('right', r, c)));
 
         rowEl.appendChild(leftSide);
         rowEl.appendChild(aisle);
@@ -638,42 +617,30 @@
       renderStandbyZone(grid);
     }
 
-    // 보조석 구역: 초과 인원이 있거나 점유 칸이 남아있을 때만 표시
+    // E석 구역: 인원수와 무관하게 5×3 고정 표시. 고정 범위 밖 점유 칸은 배치 소실 방지를 위해 유지.
     function renderStandbyZone(grid) {
-      const overflow = getOverflowCount(state.members, state.layout);
-      const cellCount = getStandbyCellCount(overflow, state.assignments);
-      if (cellCount === 0) return;
+      const cellCount = getStandbyCellCount(E_SEAT_COLS * E_SEAT_ROWS, state.assignments);
 
       const header = document.createElement('div');
       header.className = 'standby-header';
-      header.textContent = '보조석';
+      header.textContent = 'E석';
       grid.appendChild(header);
 
       const zone = document.createElement('div');
       zone.className = 'standby-zone';
-      const cols = state.layout.standbyCols || 7;
-      zone.style.gridTemplateColumns = `repeat(${Math.min(cols, cellCount)}, max-content)`;
+      zone.style.gridTemplateColumns = `repeat(${E_SEAT_COLS}, max-content)`;
       for (let i = 0; i < cellCount; i++) {
-        const cell = buildSeatCell(seatKey('standby', 0, i), standbyLabel(i));
+        const cell = buildSeatCell(seatKey('standby', 0, i));
         cell.classList.add('standby');
         zone.appendChild(cell);
       }
       grid.appendChild(zone);
     }
 
-    function makeSeatCell(side, row, col, leftCount, letter) {
-      return buildSeatCell(seatKey(side, row, col), letter ? seatLabel(letter, side, col, leftCount) : '');
-    }
-
-    function buildSeatCell(key, labelText) {
+    function buildSeatCell(key) {
       const cell = document.createElement('div');
       cell.className = 'seat-cell';
       cell.dataset.seatKey = key;
-
-      const labelEl = document.createElement('span');
-      labelEl.className = 'seat-number';
-      labelEl.textContent = labelText;
-      cell.appendChild(labelEl);
 
       const memberId = state.assignments[key];
       if (memberId) {
@@ -837,12 +804,10 @@
       openModal(`
         <h3 style="margin:0 0 12px;">레이아웃 편집</h3>
         <table style="border-collapse:collapse; width:100%;">
-          <thead><tr><th></th><th>Left Side</th><th>Right Side</th></tr></thead>
+          <thead><tr><th></th><th>B석 (통로 왼쪽)</th><th>A석 (통로 오른쪽)</th></tr></thead>
           <tbody>${inputsHtml.join('')}</tbody>
         </table>
-        <label style="display:block; margin:8px 0; font-size:13px;">보조석 열 수
-          <input id="lm-standby-cols" type="number" min="3" max="10" value="${state.layout.standbyCols || 7}" style="width:50px">
-        </label>
+        <p style="margin:8px 0 0; font-size:12px; color:#666;">E석은 5×3 고정입니다.</p>
         <p id="lm-sum" style="margin:8px 0; font-size:13px;"></p>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
           <button type="button" id="lm-cancel">취소</button>
@@ -855,16 +820,14 @@
             const v = Math.max(0, Math.min(10, parseInt(inp.value || '0', 10) || 0));
             (inp.dataset.side === 'left' ? left : right)[parseInt(inp.dataset.row,10)] = v;
           });
-          const colsInput = box.querySelector('#lm-standby-cols');
-          const standbyCols = Math.max(3, Math.min(10, parseInt(colsInput.value || '7', 10) || 7));
-          return { left, right, standbyCols };
+          return { left, right };
         }
         function refreshSum() {
           const cur = snapshot();
           const total = getTotalSeats(cur);
           const mc = state.members.length;
           const diff = total - mc;
-          const note = diff === 0 ? '✓ 좌석 수 = 단원 수' : (diff > 0 ? `좌석이 ${diff} 많음 (미배치 가능)` : `초과 ${-diff}명 → 보조석 ${-diff}칸 표시`);
+          const note = diff === 0 ? '✓ 좌석 수 = 단원 수' : (diff > 0 ? `좌석이 ${diff} 많음 (미배치 가능)` : `초과 ${-diff}명 → E석 배치 필요`);
           box.querySelector('#lm-sum').textContent = `본좌석 ${total} / 단원 ${mc}명 — ${note}`;
         }
         box.addEventListener('input', refreshSum);
@@ -875,7 +838,7 @@
           const cur = snapshot();
           const total = getTotalSeats(cur);
           if (total === 0) { alert('모든 행이 0입니다. 저장할 수 없습니다.'); return; }
-          // 사라질 좌석의 단원 확인 (보조석은 열 수와 무관하게 유지되므로 제외)
+          // 사라질 좌석의 단원 확인 (E석은 레이아웃과 무관하게 유지되므로 제외)
           const lost = [];
           for (const [k, v] of Object.entries(state.assignments)) {
             if (isStandbyKey(k)) continue;
@@ -1062,14 +1025,14 @@
             && new Set(Object.values(s1.assignments)).size === 2, 'RANDOM_ASSIGN 전원 배정 (좌석 여유)');
         },
         () => {
-          // RANDOM_ASSIGN이 보조석 배치를 보존하고 해당 단원을 셔플에서 제외
+          // RANDOM_ASSIGN이 E석 배치를 보존하고 해당 단원을 셔플에서 제외
           const ms = Array.from({ length: 4 }, (_, i) => ({ id: 'm' + i, name: '단원' + i }));
           const s0 = { members: ms, layout: { left: [2], right: [1], standbyCols: 7 }, assignments: { 'standby-0-0': 'm3' } };
           const s1 = reduce(s0, { type: 'RANDOM_ASSIGN' });
-          assert(s1.assignments['standby-0-0'] === 'm3', 'RANDOM_ASSIGN 보조석 배치 보존');
+          assert(s1.assignments['standby-0-0'] === 'm3', 'RANDOM_ASSIGN E석 배치 보존');
           const mainAssigned = Object.entries(s1.assignments).filter(([k]) => !isStandbyKey(k));
           assert(mainAssigned.length === 3, 'RANDOM_ASSIGN 본좌석 3석 배정');
-          assert(mainAssigned.every(([, v]) => v !== 'm3'), 'RANDOM_ASSIGN 보조석 단원은 본좌석 제외');
+          assert(mainAssigned.every(([, v]) => v !== 'm3'), 'RANDOM_ASSIGN E석 단원은 본좌석 제외');
         },
         () => {
           const s0 = { members: [{id:'a',name:'김'},{id:'b',name:'박'}], layout: INITIAL_LAYOUT, assignments: {} };
@@ -1102,29 +1065,22 @@
           assert(s1.members.filter(m => m.name === '박성준').length === 1, '박성준 1명 유지');
         },
         () => {
-          // AC1/AC5: 초과 인원 계산
-          assert(getOverflowCount(new Array(74), INITIAL_LAYOUT) === 8, 'getOverflowCount 74명-66석=8');
-          assert(getOverflowCount(new Array(60), INITIAL_LAYOUT) === 0, 'getOverflowCount 초과 없으면 0');
-        },
-        () => {
-          assert(standbyLabel(0) === '보01' && standbyLabel(20) === '보21', 'standbyLabel 보01/보21');
           assert(isStandbyKey('standby-0-3') === true && isStandbyKey('left-0-3') === false, 'isStandbyKey');
         },
         () => {
-          // AC5/AC7: 표시 칸 수 = max(초과 인원, 점유 최대 인덱스+1)
-          assert(getStandbyCellCount(8, {}) === 8, 'cellCount = 초과 인원');
-          assert(getStandbyCellCount(3, { 'standby-0-6': 'a', 'left-0-0': 'b' }) === 7, 'cellCount 점유 칸 유지');
-          assert(getStandbyCellCount(0, {}) === 0, 'cellCount 0 → 구역 미표시');
+          // E석 표시 칸 수 = max(고정 칸 수, 점유 최대 인덱스+1)
+          assert(getStandbyCellCount(E_SEAT_COLS * E_SEAT_ROWS, {}) === 15, 'cellCount 기본 5×3=15');
+          assert(getStandbyCellCount(15, { 'standby-0-16': 'a', 'left-0-0': 'b' }) === 17, 'cellCount 고정 범위 밖 점유 칸 유지');
         },
         () => {
-          // AC6/AC8: UPDATE_LAYOUT이 보조석 배치를 보존하고 열 수를 갱신
+          // AC6/AC8: UPDATE_LAYOUT이 E석 배치를 보존하고 standbyCols(호환 필드)를 갱신
           const s0 = {
             members: [{id:'a',name:'김'}],
             layout: { left:[2], right:[1], standbyCols: 7 },
             assignments: { 'standby-0-0': 'a', 'left-0-1': 'a2' }
           };
           const s1 = reduce(s0, { type:'UPDATE_LAYOUT', layout: { left:[1], right:[1], standbyCols: 5 } });
-          assert(s1.assignments['standby-0-0'] === 'a', 'UPDATE_LAYOUT 보조석 배치 보존');
+          assert(s1.assignments['standby-0-0'] === 'a', 'UPDATE_LAYOUT E석 배치 보존');
           assert(s1.assignments['left-0-1'] === undefined, 'UPDATE_LAYOUT 본좌석 축소는 기존대로 해제');
           assert(s1.layout.standbyCols === 5, 'UPDATE_LAYOUT standbyCols 갱신');
         },
@@ -1135,15 +1091,15 @@
           assert(s1.layout.standbyCols === 7, 'migrateState standbyCols 기본 7');
         },
         () => {
-          // AC2/AC3: 보조석 키도 ASSIGN/SWAP/UNASSIGN 동일 동작
+          // AC2/AC3: E석 키도 ASSIGN/SWAP/UNASSIGN 동일 동작
           const s0 = { members: [{id:'a',name:'김'},{id:'b',name:'박'}], layout: { left:[1], right:[0], standbyCols:7 }, assignments: {} };
           const s1 = reduce(s0, { type:'ASSIGN', seatKey:'standby-0-0', memberId:'a' });
-          assert(s1.assignments['standby-0-0'] === 'a', '보조석 ASSIGN');
+          assert(s1.assignments['standby-0-0'] === 'a', 'E석 ASSIGN');
           const s2 = reduce(s1, { type:'ASSIGN', seatKey:'left-0-0', memberId:'b' });
           const s3 = reduce(s2, { type:'SWAP', seatKeyA:'standby-0-0', seatKeyB:'left-0-0' });
-          assert(s3.assignments['standby-0-0'] === 'b' && s3.assignments['left-0-0'] === 'a', '보조석↔본좌석 SWAP');
+          assert(s3.assignments['standby-0-0'] === 'b' && s3.assignments['left-0-0'] === 'a', 'E석↔본좌석 SWAP');
           const s4 = reduce(s3, { type:'UNASSIGN', seatKey:'standby-0-0' });
-          assert(s4.assignments['standby-0-0'] === undefined, '보조석 UNASSIGN');
+          assert(s4.assignments['standby-0-0'] === undefined, 'E석 UNASSIGN');
         },
         () => {
           // 구버전 저장 데이터: 임준건이 좌석에 배치된 상태 → v3가 명단+배치 모두 제거
