@@ -225,9 +225,7 @@
 - 실브라우저 회귀 테스트 추가: 모달 5회 열닫 + 저장 후 불러오기 클릭 시 confirm 정확히 1회 확인 (17/17 통과)
 - 콘솔 버전 v10, sw.js 캐시 `seating-chart-v10`
 
-## 2026-07-25 — v1.4.2 구역 제목 옆 배치 현황 표시
-- A석·B석·E석 제목 옆에 `배치 N · 빈 N · 총 N` 현황 표시 (구역 기준이라 "미배치"는 빈 좌석 수 = "빈"으로 표기)
-- `getZoneStats(layout, assignments)` 순수 함수 추가 — B석=left, A석=right, E석=standby(표시 칸 수 기준)
-- `.zone-stats` 스타일: 11px 회색, 제목과 같은 줄 (PNG 캡처에도 포함됨)
-- 콘솔 버전 v11, sw.js 캐시 `seating-chart-v11`
-- 자가테스트 38/38, 실브라우저 검증 21/21 통과 (라벨 표시·배정 반영 갱신 4건 추가)
+## 2026-07-25 — v1.4.2 구역 제목 옆 배치 현황 표시 → 같은 날 롤백
+- v11에서 A석·B석·E석 제목 옆 `배치 N · 빈 N · 총 N` 현황을 추가했으나 사용자 요청으로 되돌림 (git revert d6cbbcf)
+- v11 관련 코드(getZoneStats, .zone-stats 스타일, 라벨 innerHTML)와 히스토리 항목 제거
+- 콘솔 버전 v12, sw.js 캐시 `seating-chart-v12` — 설치 기기에 롤백판 배포용으로 버전은 전진
