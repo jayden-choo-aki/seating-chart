@@ -217,3 +217,10 @@
 - 사용법 모달에 "💾 배치 보관함" 섹션 추가
 - 콘솔 버전 v9, sw.js 캐시 `seating-chart-v9`로 상향 (원격 v8 — E석·iOS 토스트 작업 위에 rebase)
 - 자가테스트 37/37 통과 (normalizePresets·SAVE/LOAD/DELETE_PRESET·삭제 단원 필터·E석 보존 6건 추가)
+
+## 2026-07-25 — v1.4.1 배치 보관함 confirm 중복 버그 수정
+- **증상**: 보관함을 열 때마다(저장 후 갱신 포함) 불러오기/삭제 confirm이 누적 횟수만큼 반복 표시
+- **원인**: 모달마다 재사용되는 `#modal-box`에 `addEventListener`로 클릭 리스너를 걸어 openPresetModal 호출마다 리스너 누적
+- **수정**: 슬롯 목록을 `#preset-slots` 래퍼로 감싸고 리스너를 래퍼에 부착 — innerHTML 교체 시 리스너도 함께 폐기 (다른 모달들의 `.onclick` 직접 할당 패턴과 동일한 수명)
+- 실브라우저 회귀 테스트 추가: 모달 5회 열닫 + 저장 후 불러오기 클릭 시 confirm 정확히 1회 확인 (17/17 통과)
+- 콘솔 버전 v10, sw.js 캐시 `seating-chart-v10`
