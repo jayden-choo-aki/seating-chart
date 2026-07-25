@@ -205,3 +205,15 @@
   - 명단 카드 쪽은 기존부터 잠재하던 동일 문제(재선택 직후 더블클릭 수정 모달 안 열림)도 함께 해소
 - README 갱신: 사용 방법(이동/교체, 오프라인), 주요 기능, 수동 체크리스트, 기술 스택
 - 자가테스트 22/22 통과 + 헤드리스 Chrome(puppeteer) 실브라우저 검증 14항목 통과
+
+## 2026-07-25 — v1.4 배치 보관함 (프리셋 3슬롯)
+- **자주 쓰는 좌석 배치를 3개 슬롯에 저장/불러오기/삭제** (`💾 배치 보관함` 툴바 버튼 → 모달)
+  - `SAVE_PRESET`: 현재 layout+assignments 스냅샷을 슬롯에 저장 (이름·savedAt 포함, 깊은 복사로 이후 변경과 독립)
+  - `LOAD_PRESET`: 슬롯의 layout+assignments 복원. 저장 후 삭제된 단원 배정·레이아웃 범위 밖 좌석은 제외
+  - E석(standby) 배정은 UPDATE_LAYOUT·RANDOM_ASSIGN과 동일하게 저장/복원 모두 보존, layout.standbyCols 호환 필드 유지
+  - `DELETE_PRESET`: 슬롯만 비움 (현재 배치는 유지)
+- state에 `presets: [null, null, null]` 추가. 구버전(v4 이하) 저장 데이터는 `normalizePresets`로 로드 시 자동 보정 (기존 `isValidState`는 그대로 통과 → 데이터 유실 없음)
+- 모달 UX: 슬롯별 이름·배치 인원수·저장 시각 표시, 덮어쓰기/불러오기/삭제 시 confirm, 저장 시 prompt로 이름 입력(기본값 `배치 N`)
+- 사용법 모달에 "💾 배치 보관함" 섹션 추가
+- 콘솔 버전 v9, sw.js 캐시 `seating-chart-v9`로 상향 (원격 v8 — E석·iOS 토스트 작업 위에 rebase)
+- 자가테스트 37/37 통과 (normalizePresets·SAVE/LOAD/DELETE_PRESET·삭제 단원 필터·E석 보존 6건 추가)
