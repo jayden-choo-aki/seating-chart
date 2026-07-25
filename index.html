@@ -75,6 +75,8 @@
     .seat-row.side-header .side-label {
       text-align: center; font-size: 13px; font-weight: 600; color: #555;
     }
+    /* 구역 제목 옆 현황: 배치 N · 빈 N · 총 N */
+    .zone-stats { font-size: 11px; font-weight: 400; color: #888; white-space: nowrap; }
 
     .seat-cell {
       width: 56px; height: 28px;
@@ -184,7 +186,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v10');
+    console.log('베이스 배치도 v11');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -266,6 +268,23 @@
         if (col > maxIdx) maxIdx = col;
       }
       return Math.max(minCells, maxIdx + 1);
+    }
+
+    // 구역별 현황: B석=left, A석=right, E석=standby (총 = E석은 표시 칸 수 기준)
+    function getZoneStats(layout, assignments) {
+      const totalLeft = layout.left.reduce((a, b) => a + b, 0);
+      const totalRight = layout.right.reduce((a, b) => a + b, 0);
+      const occ = { left: 0, right: 0, standby: 0 };
+      for (const k of Object.keys(assignments)) {
+        const { side } = parseSeatKey(k);
+        if (occ[side] !== undefined) occ[side]++;
+      }
+      const totalStandby = getStandbyCellCount(E_SEAT_COLS * E_SEAT_ROWS, assignments);
+      return {
+        left:    { occupied: occ.left,    empty: totalLeft - occ.left,       total: totalLeft },
+        right:   { occupied: occ.right,   empty: totalRight - occ.right,     total: totalRight },
+        standby: { occupied: occ.standby, empty: totalStandby - occ.standby, total: totalStandby }
+      };
     }
 
     function validateLayout(layout, memberCount) {
@@ -641,17 +660,19 @@
       grid.style.setProperty('--max-left', String(maxLeft));
       grid.style.setProperty('--max-right', String(maxRight));
 
-      // 구역 라벨: 통로 기준 왼쪽 = B석, 오른쪽 = A석
+      // 구역 라벨: 통로 기준 왼쪽 = B석, 오른쪽 = A석 (+ 구역별 배치 현황)
+      const stats = getZoneStats(state.layout, state.assignments);
+      const statLine = (s) => `배치 ${s.occupied} · 빈 ${s.empty} · 총 ${s.total}`;
       const headerRow = document.createElement('div');
       headerRow.className = 'seat-row side-header';
       const leftLabel = document.createElement('div');
       leftLabel.className = 'side-label';
-      leftLabel.textContent = 'B석';
+      leftLabel.innerHTML = `B석 <span class="zone-stats">${statLine(stats.left)}</span>`;
       const headerAisle = document.createElement('div');
       headerAisle.className = 'aisle';
       const rightLabel = document.createElement('div');
       rightLabel.className = 'side-label';
-      rightLabel.textContent = 'A석';
+      rightLabel.innerHTML = `A석 <span class="zone-stats">${statLine(stats.right)}</span>`;
       headerRow.appendChild(leftLabel);
       headerRow.appendChild(headerAisle);
       headerRow.appendChild(rightLabel);
@@ -691,7 +712,8 @@
 
       const header = document.createElement('div');
       header.className = 'standby-header';
-      header.textContent = 'E석';
+      const st = getZoneStats(state.layout, state.assignments).standby;
+      header.innerHTML = `E석 <span class="zone-stats">배치 ${st.occupied} · 빈 ${st.empty} · 총 ${st.total}</span>`;
       grid.appendChild(header);
 
       const zone = document.createElement('div');
@@ -1293,6 +1315,16 @@
           const s1 = reduce(s0, { type:'UPDATE_LAYOUT', side:'left', rowCounts:[2,1] });
           assert(s1.assignments['left-1-1'] === undefined, 'UPDATE_LAYOUT 축소 시 좌석 자동 해제');
           assert(s1.layout.left[1] === 1 && s1.layout.right[1] === 1, 'UPDATE_LAYOUT 다른 사이드 보존');
+        },
+
+        () => {
+          const st = getZoneStats(
+            { left: [2, 1], right: [1, 0] },
+            { 'left-0-0': 'a', 'left-0-1': 'b', 'right-0-0': 'c', 'standby-0-4': 'd' }
+          );
+          assert(st.left.occupied === 2 && st.left.empty === 1 && st.left.total === 3, 'getZoneStats B석(left)');
+          assert(st.right.occupied === 1 && st.right.empty === 0 && st.right.total === 1, 'getZoneStats A석(right)');
+          assert(st.standby.occupied === 1 && st.standby.empty === 14 && st.standby.total === 15, 'getZoneStats E석 고정 15칸');
         },
 
         () => {
