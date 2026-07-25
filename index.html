@@ -184,7 +184,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v12');
+    console.log('베이스 배치도 v13');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -601,9 +601,10 @@
       for (const k of Object.keys(state.assignments)) {
         if (isStandbyKey(k)) standby++; else main++;
       }
-      const unassigned = total - main - standby;
+      const assigned = main + standby;
+      const unassigned = total - assigned;
       document.getElementById('member-counter').textContent =
-        `A·B석 ${main} / E석 ${standby} / 미배치 ${unassigned} / 총 ${total}명`;
+        `배치 ${assigned} / 미배치 ${unassigned} / 총원 ${total}명`;
     }
 
     function renderMemberList() {
