@@ -101,6 +101,23 @@
     .seat-cell.standby { background: #fffdf5; border-color: #d9c27a; }
     .seat-cell.standby.occupied { background: #fff3d6; border-style: solid; border-color: #e0b954; }
 
+    /* 미도착(늦게 온다고 한 사람): E석 연노랑보다 진한 주황.
+       테두리를 굵히면 셀 크기가 커져 그리드가 밀리므로 inset 그림자로 두께감만 준다. */
+    .seat-cell.occupied.late,
+    .seat-cell.standby.occupied.late {
+      background: #ffd8ad; border-style: solid; border-color: #e8720c;
+      box-shadow: inset 0 0 0 1px #e8720c;
+    }
+    .seat-cell.late .seat-name { color: #7a3b00; font-weight: 600; }
+    .seat-cell.late .seat-memo { color: #8a5520; }
+
+    /* 출석체크 모드 안내 띠 */
+    #attendance-banner {
+      background: #fff1e0; border: 1px solid #e8a15c; color: #7a3b00;
+      padding: 8px 10px; margin: 8px 0; border-radius: 6px;
+      font-size: 13px; line-height: 1.5;
+    }
+
     /* 저장/공유 완료 피드백 토스트 */
     .toast {
       position: fixed; left: 50%; bottom: 32px;
@@ -169,6 +186,10 @@
     ⚠️ 저장이 비활성화되어 있습니다. 새로고침 시 데이터가 사라집니다.
   </div>
   <div id="toolbar"></div>
+  <div id="attendance-banner" hidden>
+    <b>출석체크 모드</b> — 좌석을 탭하면 <b style="color:#e8720c;">미도착(주황)</b> ↔ 도착으로 바뀝니다.
+    이 모드에서는 배치·이동·해제가 잠깁니다.
+  </div>
   <section id="member-panel">
     <div id="member-filter"></div>
     <div id="member-counter"></div>
@@ -184,7 +205,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v13');
+    console.log('베이스 배치도 v14');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -284,7 +305,10 @@
         && typeof p.name === 'string'
         && typeof p.savedAt === 'number'
         && !!p.layout && Array.isArray(p.layout.left) && Array.isArray(p.layout.right)
-        && !!p.assignments && typeof p.assignments === 'object' && !Array.isArray(p.assignments);
+        && !!p.assignments && typeof p.assignments === 'object' && !Array.isArray(p.assignments)
+        // late는 v14에서 추가된 필드 — 구버전 프리셋에는 없으므로 반드시 옵셔널로 둔다.
+        // 필수로 검증하면 normalizePresets가 기존 슬롯 3개를 전부 null로 지운다.
+        && (p.late === undefined || Array.isArray(p.late));
     }
 
     // 구버전 저장 데이터(presets 없음)나 깨진 슬롯을 항상 3칸 배열로 보정
@@ -300,7 +324,8 @@
         members: SEED_MEMBERS.map((name, i) => ({
           id: `m_seed_${i}`,
           name,
-          memo: ''
+          memo: '',
+          phone: ''
         })),
         layout: {
           left:  [...INITIAL_LAYOUT.left],
@@ -308,6 +333,7 @@
           standbyCols: 7  // 구버전 스키마 호환 필드 — E석 렌더는 5×3 고정이라 미사용
         },
         assignments: {},
+        late: [],   // 미도착 표시된 단원 id — 좌석이 아니라 사람에게 붙는다
         presets: [null, null, null]
       };
     }
@@ -343,6 +369,8 @@
         }
         // v4 이전 데이터에는 presets가 없음 — 마이그레이션 겸 보정
         parsed.presets = normalizePresets(parsed.presets);
+        // v14 이전 데이터에는 late가 없음 (isValidState에서도 필수로 보지 않는다)
+        if (!Array.isArray(parsed.late)) parsed.late = [];
         return parsed;
       } catch (e) {
         if (e && e.name !== 'SecurityError') {
@@ -364,7 +392,7 @@
       if ((next.seedVersion || 1) < 2) {
         const existing = new Set(next.members.map(m => m.name));
         const added = EXTRA_MEMBERS_V2
-          .map((name, i) => ({ id: `m_v2_${i}`, name, memo: '' }))
+          .map((name, i) => ({ id: `m_v2_${i}`, name, memo: '', phone: '' }))
           .filter(m => !existing.has(m.name));
         next = { ...next, members: [...next.members, ...added], seedVersion: 2 };
       }
@@ -403,15 +431,41 @@
 
     // === reduce + dispatch ===
 
+    function getLateSet(s) {
+      return new Set(Array.isArray(s.late) ? s.late : []);
+    }
+
+    // 미도착 표시는 '배치된 사람'에게만 유효하다.
+    // 배치 해제·단원 삭제·초기화·랜덤배치 이탈·레이아웃 축소·프리셋 복원 등
+    // 좌석에서 빠지는 경로가 여럿이라, 액션마다 지우는 대신 매 dispatch 후 한 번에 정리한다.
+    function pruneLate(s) {
+      const late = Array.isArray(s.late) ? s.late : [];
+      const assigned = new Set(Object.values(s.assignments));
+      const next = late.filter(id => assigned.has(id));
+      return next.length === late.length ? s : { ...s, late: next };
+    }
+
     function reduce(s, action) {
       switch (action.type) {
+        case 'TOGGLE_LATE': {
+          const late = Array.isArray(s.late) ? s.late : [];
+          return {
+            ...s,
+            late: late.includes(action.memberId)
+              ? late.filter(id => id !== action.memberId)
+              : [...late, action.memberId]
+          };
+        }
         case 'ADD_MEMBER': {
           const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-          return { ...s, members: [...s.members, { id, name: action.name, memo: action.memo || '' }] };
+          return { ...s, members: [...s.members,
+            { id, name: action.name, memo: action.memo || '', phone: action.phone || '' }] };
         }
         case 'UPDATE_MEMBER': {
           return { ...s, members: s.members.map(m =>
-            m.id === action.id ? { ...m, name: action.name, memo: action.memo || '' } : m) };
+            m.id === action.id
+              ? { ...m, name: action.name, memo: action.memo || '', phone: action.phone || '' }
+              : m) };
         }
         case 'DELETE_MEMBER': {
           const next = { ...s.assignments };
@@ -470,7 +524,8 @@
             name: action.name,
             savedAt: action.savedAt || Date.now(),
             layout: { ...s.layout, left: [...s.layout.left], right: [...s.layout.right] },
-            assignments: { ...s.assignments }
+            assignments: { ...s.assignments },
+            late: [...(Array.isArray(s.late) ? s.late : [])]
           };
           return { ...s, presets };
         }
@@ -489,7 +544,9 @@
             const { side, row, col } = parseSeatKey(k);
             if (col < ((layout[side] || [])[row] || 0)) next[k] = v;
           }
-          return { ...s, layout, assignments: next };
+          // 미도착 표시도 함께 복원 — 삭제된 단원·복원 안 된 좌석의 표시는 pruneLate가 걸러낸다
+          const late = Array.isArray(p.late) ? [...p.late] : [];
+          return { ...s, layout, assignments: next, late };
         }
         case 'DELETE_PRESET': {
           const presets = normalizePresets(s.presets);
@@ -517,7 +574,7 @@
     }
 
     function dispatch(action) {
-      state = reduce(state, action);
+      state = pruneLate(reduce(state, action));
       saveState(state);
       render();
     }
@@ -526,6 +583,16 @@
 
     let filterChosung = null;  // null = 전체
     let selection = null;  // { type:'member', id } | { type:'seat', key } | null
+
+    // 출석체크 모드: 좌석 탭이 배치가 아니라 미도착 표시 토글로 동작.
+    // 일시적인 화면 상태라 저장하지 않는다 — 새로고침하면 꺼진 채로 시작.
+    let attendanceMode = false;
+
+    function toggleAttendanceMode() {
+      attendanceMode = !attendanceMode;
+      selection = null;  // 모드가 바뀌면 진행 중이던 배치 선택은 의미가 없다
+      render();
+    }
 
     function clearSelection() { selection = null; render(); }
 
@@ -549,6 +616,8 @@
         <button type="button" id="tb-edit-layout">레이아웃 편집</button>
         <button type="button" id="tb-random">🎲 랜덤배치</button>
         <button type="button" id="tb-presets">💾 배치 보관함</button>
+        <button type="button" id="tb-attendance"${attendanceMode
+          ? ' style="background:#e8720c; color:#fff; border-color:#e8720c;"' : ''}>✅ 출석체크</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
         <button type="button" id="tb-help">📖 사용법</button>
@@ -560,6 +629,7 @@
         dispatch({ type: 'RANDOM_ASSIGN' });
       };
       el.querySelector('#tb-presets').onclick = openPresetModal;
+      el.querySelector('#tb-attendance').onclick = toggleAttendanceMode;
       el.querySelector('#tb-png').onclick = downloadPng;
       el.querySelector('#tb-help').onclick = openManualModal;
       el.querySelector('#tb-reset').onclick = () => {
@@ -587,6 +657,7 @@
 
     function render() {
       document.getElementById('storage-warning').hidden = storageAvailable;
+      document.getElementById('attendance-banner').hidden = !attendanceMode;
       renderToolbar();
       renderFilterBar();
       renderCounter();
@@ -603,8 +674,11 @@
       }
       const assigned = main + standby;
       const unassigned = total - assigned;
+      // 미도착이 0명이면 표기를 늘리지 않는다 (평소 화면은 지금 그대로)
+      const lateCount = getLateSet(state).size;
+      const latePart = lateCount > 0 ? ` · 미도착 ${lateCount}` : '';
       document.getElementById('member-counter').textContent =
-        `배치 ${assigned} / 미배치 ${unassigned} / 총원 ${total}명`;
+        `배치 ${assigned}${latePart} / 미배치 ${unassigned} / 총원 ${total}명`;
     }
 
     function renderMemberList() {
@@ -616,7 +690,7 @@
         const card = document.createElement('div');
         card.className = 'member-card';
         card.dataset.memberId = m.id;
-        card.draggable = true;
+        card.draggable = !attendanceMode;
         const nameEl = document.createElement('span');
         nameEl.textContent = m.name;
         card.appendChild(nameEl);
@@ -715,7 +789,9 @@
       if (memberId) {
         const m = state.members.find(x => x.id === memberId);
         cell.classList.add('occupied');
-        cell.draggable = true;
+        if (Array.isArray(state.late) && state.late.includes(memberId)) cell.classList.add('late');
+        // 출석체크 모드에서는 드래그로도 자리가 바뀌지 않게 막는다
+        cell.draggable = !attendanceMode;
         const nameEl = document.createElement('span');
         nameEl.className = 'seat-name';
         nameEl.textContent = m ? m.name : '?';
@@ -755,8 +831,20 @@
         <label style="display:block; margin-bottom:8px;">이름
           <input id="mm-name" type="text" value="${existing ? escapeHtml(existing.name) : ''}" style="width:100%; padding:4px; box-sizing:border-box;">
         </label>
-        <label style="display:block; margin-bottom:12px;">메모
+        <label style="display:block; margin-bottom:8px;">메모
           <input id="mm-memo" type="text" value="${existing ? escapeHtml(existing.memo) : ''}" style="width:100%; padding:4px; box-sizing:border-box;">
+        </label>
+        <label style="display:block; margin-bottom:12px;">전화번호
+          <span style="display:flex; gap:6px; align-items:stretch;">
+            <input id="mm-phone" type="tel" inputmode="tel" autocomplete="tel"
+              placeholder="010-1234-5678"
+              value="${existing ? escapeHtml(existing.phone || '') : ''}"
+              style="flex:1; min-width:0; padding:4px; box-sizing:border-box;">
+            <a id="mm-call" role="button" aria-label="전화 걸기"
+              style="display:flex; align-items:center; padding:0 12px; border:1px solid #ccc; border-radius:4px;
+                     text-decoration:none; font-size:16px; background:#f5f5f5;">📞</a>
+          </span>
+          <span style="color:#777; font-size:11px;">번호를 입력하면 📞 버튼으로 바로 전화를 겁니다.</span>
         </label>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
           ${isEdit ? '<button type="button" id="mm-delete" style="margin-right:auto; color:#d33;">삭제</button>' : ''}
@@ -766,16 +854,36 @@
       `, (box) => {
         const nameInput = box.querySelector('#mm-name');
         const memoInput = box.querySelector('#mm-memo');
+        const phoneInput = box.querySelector('#mm-phone');
+        const callBtn = box.querySelector('#mm-call');
         nameInput.focus();
+
+        // 저장하지 않은 상태에서도 방금 입력한 번호로 걸 수 있게 입력값을 그대로 따라간다
+        function syncCallButton() {
+          const tel = telDigits(phoneInput.value);
+          if (tel.replace(/\D/g, '').length >= 3) {
+            callBtn.href = `tel:${tel}`;
+            callBtn.style.opacity = '1';
+            callBtn.style.pointerEvents = 'auto';
+          } else {
+            callBtn.removeAttribute('href');
+            callBtn.style.opacity = '0.35';
+            callBtn.style.pointerEvents = 'none';
+          }
+        }
+        phoneInput.addEventListener('input', syncCallButton);
+        syncCallButton();
 
         box.querySelector('#mm-cancel').onclick = closeModal;
         box.querySelector('#mm-save').onclick = () => {
           const name = nameInput.value.trim();
           if (!name) { nameInput.focus(); return; }
+          const memo = memoInput.value.trim();
+          const phone = phoneInput.value.trim();
           if (isEdit) {
-            dispatch({ type: 'UPDATE_MEMBER', id: existing.id, name, memo: memoInput.value.trim() });
+            dispatch({ type: 'UPDATE_MEMBER', id: existing.id, name, memo, phone });
           } else {
-            dispatch({ type: 'ADD_MEMBER', name, memo: memoInput.value.trim() });
+            dispatch({ type: 'ADD_MEMBER', name, memo, phone });
           }
           closeModal();
         };
@@ -791,6 +899,14 @@
           };
         }
       });
+    }
+
+    // '010-1234-5678', '010 1234 5678' 처럼 사람이 읽기 좋게 적어도 다이얼러가 받도록 숫자만 남긴다.
+    // 국가번호(+82…)는 맨 앞 +만 유지한다.
+    function telDigits(phone) {
+      const s = String(phone == null ? '' : phone).trim();
+      const plus = s.startsWith('+') ? '+' : '';
+      return plus + s.replace(/[^0-9]/g, '');
     }
 
     function escapeHtml(s) {
@@ -1056,8 +1172,31 @@
           <h4 style="${h4}">✏️ 배치 해제·이름 수정</h4>
           <ul style="${list}">
             <li>배치된 좌석 <b>더블클릭</b>(모바일: 빠르게 두 번 탭) = 배치 해제(명단으로 복귀)</li>
-            <li>좌석이나 카드를 <b>길게 누르기(0.5초)</b> = 이름/메모 수정</li>
+            <li>좌석이나 카드를 <b>길게 누르기(0.5초)</b> = 이름/메모/전화번호 수정</li>
             <li><b>초기화</b> 버튼 = 좌석 배치만 전부 해제 (단원 명단과 레이아웃은 유지)</li>
+          </ul>
+
+          <h4 style="${h4}">📞 전화번호 — 안 온 사람에게 바로 걸기</h4>
+          <ul style="${list}">
+            <li>좌석이나 명단 카드를 <b>길게 눌러</b> 수정 창을 열면 <b>전화번호</b> 입력란이 있습니다.</li>
+            <li><b>010-1234-5678</b>처럼 하이픈을 넣어 적어도 되고, 숫자만 붙여 써도 됩니다.</li>
+            <li>옆의 <b>📞 버튼</b>을 누르면 바로 전화가 걸립니다. 저장을 누르기 전에 방금 입력한 번호로도 걸 수 있습니다.</li>
+            <li>번호가 비어 있으면 📞 버튼은 흐리게 표시되고 눌리지 않습니다.</li>
+            <li><b>전화번호는 좌석과 명단에 표시되지 않습니다.</b> PNG로 뽑아 카톡에 공유해도 번호는 찍히지 않습니다.</li>
+            <li>PC에서는 전화 연결 프로그램이 없으면 아무 일도 일어나지 않습니다. 휴대폰에서 사용하세요.</li>
+          </ul>
+
+          <h4 style="${h4}">✅ 출석체크 — 늦게 오는 사람 표시</h4>
+          <ul style="${list}">
+            <li>늦게 온다고 한 사람도 <b>자리는 미리 배치</b>해 두고, 도착 여부만 색으로 구분하는 기능입니다.</li>
+            <li><b>[✅ 출석체크]</b> 버튼을 누르면 모드가 켜집니다. 이 상태에서 <b>좌석을 한 번 탭</b>할 때마다
+              <b style="color:#e8720c;">주황(미도착)</b> ↔ 파랑(도착)이 바뀝니다.</li>
+            <li>실제로 도착하면 그 좌석을 다시 탭해 파랑으로 되돌리세요.
+              <b>모임이 끝났는데 주황으로 남아 있는 사람이 그날 결석자</b>입니다.</li>
+            <li>모드가 켜져 있는 동안에는 <b>배치·이동·해제·이름수정이 잠깁니다.</b> 출석을 찍다가 자리가 흐트러질 걱정이 없습니다. 버튼을 다시 누르면 원래대로 돌아옵니다.</li>
+            <li>미도착이 있으면 상단 인원 표시에 <b>"미도착 ○"</b>이 함께 나옵니다.</li>
+            <li>표시는 좌석이 아니라 <b>사람에게</b> 붙습니다. 자리를 옮기거나 서로 바꿔도 따라가고, 배치를 해제하면 함께 사라집니다.</li>
+            <li>PNG로 내려받으면 주황색이 그대로 찍혀 기록으로 남습니다.</li>
           </ul>
 
           <h4 style="${h4}">💾 배치 보관함 — 자주 쓰는 배치 저장</h4>
@@ -1065,6 +1204,7 @@
             <li><b>[💾 배치 보관함]</b> 버튼을 누르면 저장 슬롯 3개가 나옵니다.</li>
             <li>슬롯의 <b>[저장]</b> = 지금 화면의 배치를 이름을 붙여 보관 (예: "주일 2부")</li>
             <li><b>[불러오기]</b> = 보관해 둔 배치로 화면을 되돌림. 랜덤배치·초기화를 해도 보관함의 배치는 지워지지 않습니다.</li>
+            <li>저장할 때의 <b>주황(미도착) 표시도 함께 보관</b>되어, 불러오면 그대로 복원됩니다.</li>
             <li>저장 후 단원을 삭제했다면, 불러올 때 그 단원 자리만 빈 좌석이 됩니다.</li>
           </ul>
 
@@ -1342,6 +1482,103 @@
           assert(s3.assignments['standby-0-2'] === 'b', 'LOAD_PRESET E석 배정 보존');
           assert(s3.layout.standbyCols === 7, 'LOAD_PRESET standbyCols 보존');
         },
+
+        // === 미도착 표시(출석체크) ===
+        () => {
+          const s0 = { members:[{id:'a',name:'김'}], layout:{left:[1],right:[0]},
+                       assignments:{'left-0-0':'a'}, late:[] };
+          const s1 = reduce(s0, { type:'TOGGLE_LATE', memberId:'a' });
+          assert(s1.late.join(',') === 'a', 'TOGGLE_LATE 표시 켜짐');
+          const s2 = reduce(s1, { type:'TOGGLE_LATE', memberId:'a' });
+          assert(s2.late.length === 0, 'TOGGLE_LATE 다시 누르면 꺼짐');
+        },
+        () => {
+          const s0 = { members:[{id:'a',name:'김'},{id:'b',name:'박'}], layout:{left:[2],right:[0]},
+                       assignments:{'left-0-0':'a','left-0-1':'b'}, late:['a'] };
+          // 빈 좌석으로 이동(ASSIGN)해도 사람을 따라간다
+          const moved = pruneLate(reduce({...s0, assignments:{'left-0-0':'a'}},
+            { type:'ASSIGN', seatKey:'left-0-1', memberId:'a' }));
+          assert(moved.late.join(',') === 'a', '자리 이동 시 미도착 표시 유지');
+          // 자리바꿈(SWAP)도 마찬가지
+          const swapped = pruneLate(reduce(s0, { type:'SWAP', seatKeyA:'left-0-0', seatKeyB:'left-0-1' }));
+          assert(swapped.late.join(',') === 'a' && swapped.assignments['left-0-1'] === 'a',
+            '자리바꿈 시 미도착 표시 유지');
+        },
+        () => {
+          const s0 = { members:[{id:'a',name:'김'}], layout:{left:[1],right:[0]},
+                       assignments:{'left-0-0':'a'}, late:['a'] };
+          assert(pruneLate(reduce(s0, { type:'UNASSIGN', seatKey:'left-0-0' })).late.length === 0,
+            '배치 해제 시 미도착 표시 제거');
+          assert(pruneLate(reduce(s0, { type:'DELETE_MEMBER', id:'a' })).late.length === 0,
+            '단원 삭제 시 미도착 표시 제거');
+          assert(pruneLate(reduce(s0, { type:'RESET_ASSIGNMENTS' })).late.length === 0,
+            '초기화 시 미도착 표시 전부 제거');
+        },
+        () => {
+          // 레이아웃 축소로 좌석이 사라진 단원의 표시도 함께 정리
+          const s0 = { members:[{id:'a',name:'김'}], layout:{left:[2],right:[0]},
+                       assignments:{'left-0-1':'a'}, late:['a'] };
+          const s1 = pruneLate(reduce(s0, { type:'UPDATE_LAYOUT', side:'left', rowCounts:[1] }));
+          assert(s1.late.length === 0, '레이아웃 축소로 밀려난 단원의 미도착 표시 제거');
+        },
+        () => {
+          // 랜덤배치: 여전히 배치된 사람의 표시는 남고, 밀려난 사람은 사라진다
+          const s0 = { members:[{id:'a',name:'김'},{id:'b',name:'박'},{id:'c',name:'이'}],
+                       layout:{left:[1],right:[0]}, assignments:{'standby-0-0':'a'}, late:['a','b','c'] };
+          const s1 = pruneLate(reduce(s0, { type:'RANDOM_ASSIGN' }));
+          assert(s1.late.includes('a'), '랜덤배치 후 E석 잔류자의 미도착 표시 유지');
+          assert(s1.late.length === 2, '랜덤배치로 미배치가 된 단원의 표시는 제거');
+        },
+        () => {
+          // 보관함 왕복: 저장 시점의 미도착 표시가 그대로 복원
+          const s0 = { members:[{id:'a',name:'김'},{id:'b',name:'박'}], layout:{left:[2],right:[0]},
+                       assignments:{'left-0-0':'a','left-0-1':'b'}, late:['b'] };
+          const s1 = reduce(s0, { type:'SAVE_PRESET', slot:0, name:'주일', savedAt:1000 });
+          assert(s1.presets[0].late.join(',') === 'b', 'SAVE_PRESET 미도착 표시 저장');
+          const s2 = pruneLate(reduce(s1, { type:'RESET_ASSIGNMENTS' }));
+          const s3 = pruneLate(reduce(s2, { type:'LOAD_PRESET', slot:0 }));
+          assert(s3.late.join(',') === 'b', 'LOAD_PRESET 미도착 표시 복원');
+          // 저장 후 삭제된 단원의 표시는 복원되지 않는다
+          const s4 = pruneLate(reduce({ ...s2, members:[{id:'a',name:'김'}] },
+            { type:'LOAD_PRESET', slot:0 }));
+          assert(s4.late.length === 0, 'LOAD_PRESET 삭제된 단원의 미도착 표시 제외');
+        },
+        () => {
+          // v14 이전 프리셋에는 late가 없다 — 무효로 판정하면 기존 슬롯이 전부 지워진다
+          const old = { name:'주일', savedAt:1000, layout:{left:[1],right:[0]}, assignments:{'left-0-0':'a'} };
+          assert(isValidPreset(old) === true, 'late 없는 구버전 프리셋도 유효');
+          assert(normalizePresets([old])[0] === old, 'normalizePresets가 구버전 슬롯을 지우지 않음');
+          assert(isValidPreset({ ...old, late: 'x' }) === false, 'late가 배열이 아니면 무효');
+          const restored = pruneLate(reduce(
+            { members:[{id:'a',name:'김'}], layout:{left:[1],right:[0]}, assignments:{}, late:[],
+              presets:[old, null, null] },
+            { type:'LOAD_PRESET', slot:0 }));
+          assert(restored.late.length === 0, '구버전 프리셋 불러오기 → 미도착 표시 없음');
+        },
+
+        // === 전화번호 ===
+        () => {
+          assert(telDigits('010-1234-5678') === '01012345678', 'telDigits 하이픈 제거');
+          assert(telDigits(' 010 1234 5678 ') === '01012345678', 'telDigits 공백 제거');
+          assert(telDigits('(02)123-4567') === '021234567', 'telDigits 괄호 제거');
+          assert(telDigits('+82 10-1234-5678') === '+821012345678', 'telDigits 선행 + 유지');
+          assert(telDigits('') === '' && telDigits(undefined) === '' && telDigits(null) === '',
+            'telDigits 빈 값 안전 처리');
+        },
+        () => {
+          const s0 = { members: [], layout:{left:[1],right:[0]}, assignments:{}, late:[] };
+          const s1 = reduce(s0, { type:'ADD_MEMBER', name:'김', memo:'', phone:'010-1111-2222' });
+          assert(s1.members[0].phone === '010-1111-2222', 'ADD_MEMBER 전화번호 저장');
+          const id = s1.members[0].id;
+          const s2 = reduce(s1, { type:'UPDATE_MEMBER', id, name:'김', memo:'테너', phone:'010-3333-4444' });
+          assert(s2.members[0].phone === '010-3333-4444', 'UPDATE_MEMBER 전화번호 수정');
+          const s3 = reduce(s2, { type:'UPDATE_MEMBER', id, name:'김', memo:'테너' });
+          assert(s3.members[0].phone === '', 'UPDATE_MEMBER 전화번호 비우기');
+          // 전화번호가 없던 구버전 단원도 수정 시 정상 동작
+          const s4 = reduce({ ...s0, members:[{ id:'x', name:'박', memo:'' }] },
+            { type:'UPDATE_MEMBER', id:'x', name:'박', memo:'', phone:'01055556666' });
+          assert(s4.members[0].phone === '01055556666', '구버전 단원에 전화번호 추가');
+        },
       ];
 
       let pass = 0, fail = 0;
@@ -1366,12 +1603,14 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       if (new URL(location.href).searchParams.get('test') === '1') return; // 테스트 모드는 렌더 생략
-      state = migrateState(loadState());
+      // 마이그레이션으로 단원이 빠졌거나 저장 데이터가 어긋난 경우를 대비해 시작 시에도 한 번 정리
+      state = pruneLate(migrateState(loadState()));
       saveState(state);
       render();
 
       // 단원 카드 더블클릭 → 수정 모달 (단순 한 번 클릭은 후속 태스크의 "선택"에 쓰임)
       document.getElementById('member-list').addEventListener('dblclick', (e) => {
+        if (attendanceMode) return;
         const card = e.target.closest('[data-member-id]');
         if (!card) return;
         const m = state.members.find(x => x.id === card.dataset.memberId);
@@ -1380,6 +1619,7 @@
 
       // 단원 카드 단일 클릭 → 선택 / 배치
       document.getElementById('member-list').addEventListener('click', (e) => {
+        if (attendanceMode) return;
         const card = e.target.closest('[data-member-id]');
         if (!card) return;
         const memberId = card.dataset.memberId;
@@ -1405,6 +1645,13 @@
         if (!cell) return;
         const key = cell.dataset.seatKey;
         const isOccupied = cell.classList.contains('occupied');
+        if (attendanceMode) {
+          // 출석체크 모드: 점유 좌석 탭 = 미도착 표시 토글. 빈 좌석은 무시.
+          if (!isOccupied) return;
+          const memberId = state.assignments[key];
+          if (memberId) dispatch({ type: 'TOGGLE_LATE', memberId });
+          return;
+        }
         if (selection && selection.type === 'member') {
           if (isOccupied) return; // 단원 선택 상태에서 점유 좌석 클릭 무시
           const memberId = selection.id;
@@ -1437,6 +1684,7 @@
 
       // 좌석 더블클릭/더블탭 → 배치 해제
       document.getElementById('seat-grid').addEventListener('dblclick', (e) => {
+        if (attendanceMode) return;  // 모드 중에는 배치 해제 금지
         const cell = e.target.closest('[data-seat-key]');
         if (!cell || !cell.classList.contains('occupied')) return;
         dispatch({ type: 'UNASSIGN', seatKey: cell.dataset.seatKey });
@@ -1451,6 +1699,7 @@
       }
       const seatGridEl = document.getElementById('seat-grid');
       seatGridEl.addEventListener('pointerdown', (e) => {
+        if (attendanceMode) return;  // 모드 중에는 수정 모달을 열지 않는다
         const cell = e.target.closest('[data-seat-key]');
         if (!cell || !cell.classList.contains('occupied')) return;
         longPressStartX = e.clientX;
