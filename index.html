@@ -205,7 +205,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v15');
+    console.log('베이스 배치도 v16');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -427,6 +427,99 @@
       }
     }
 
+    // === 공유 링크 (배치 데이터 전달) — docs/spec-share-link.md ===
+
+    // file:// 등 비웹 환경에서 만든 링크도 받는 사람이 열 수 있어야 하므로 배포 주소로 고정
+    const SHARE_BASE_URL = 'https://jayden-choo-aki.github.io/seating-chart/';
+
+    function buildSharePayload(s) {
+      return {
+        v: 1,
+        members: s.members.map(m => ({ id: m.id, name: m.name, memo: m.memo || '', phone: m.phone || '' })),
+        layout: { left: [...s.layout.left], right: [...s.layout.right], standbyCols: s.layout.standbyCols || 7 },
+        assignments: { ...s.assignments },
+        late: [...(Array.isArray(s.late) ? s.late : [])]
+      };
+    }
+
+    function isValidSharePayload(p) {
+      return !!p && typeof p === 'object'
+        && p.v === 1
+        && Array.isArray(p.members)
+        && p.members.every(m => m && typeof m.id === 'string' && typeof m.name === 'string')
+        && !!p.layout && Array.isArray(p.layout.left) && Array.isArray(p.layout.right)
+        && !!p.assignments && typeof p.assignments === 'object' && !Array.isArray(p.assignments)
+        && (p.late === undefined || Array.isArray(p.late));
+    }
+
+    // 보낸 쪽 스냅샷으로 통째 교체하되 수신자의 보관함(presets)은 유지한다.
+    // seedVersion도 수신자 것 유지 — 적용 후 migrateState를 다시 거쳐도 이름 기준 병합이라 멱등.
+    function applySharePayload(s, p) {
+      return {
+        ...s,
+        members: p.members.map(m => ({ id: m.id, name: m.name, memo: m.memo || '', phone: m.phone || '' })),
+        layout: { left: [...p.layout.left], right: [...p.layout.right], standbyCols: p.layout.standbyCols || 7 },
+        assignments: { ...p.assignments },
+        late: [...(Array.isArray(p.late) ? p.late : [])]
+      };
+    }
+
+    function bytesToBase64Url(bytes) {
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function base64UrlToBytes(str) {
+      const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+      const bin = atob(b64 + pad);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    }
+
+    // 'c:' = deflate 압축 + base64url, 'r:' = 무압축 base64url (CompressionStream 미지원 폴백)
+    async function encodeShareData(payload) {
+      const bytes = new TextEncoder().encode(JSON.stringify(payload));
+      if (typeof CompressionStream === 'function') {
+        try {
+          const buf = await new Response(
+            new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))
+          ).arrayBuffer();
+          return 'c:' + bytesToBase64Url(new Uint8Array(buf));
+        } catch (_) { /* 무압축 폴백 */ }
+      }
+      return 'r:' + bytesToBase64Url(bytes);
+    }
+
+    // 파손·형식 불일치는 전부 null — 호출부는 null이면 기존 데이터를 유지한다.
+    async function decodeShareData(str) {
+      try {
+        const mode = String(str).slice(0, 2);
+        if (mode !== 'c:' && mode !== 'r:') return null;
+        let bytes = base64UrlToBytes(String(str).slice(2));
+        if (mode === 'c:') {
+          if (typeof DecompressionStream !== 'function') return null;
+          const buf = await new Response(
+            new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))
+          ).arrayBuffer();
+          bytes = new Uint8Array(buf);
+        }
+        const payload = JSON.parse(new TextDecoder().decode(bytes));
+        return isValidSharePayload(payload) ? payload : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function buildShareUrl(encoded) {
+      const isWeb = typeof location !== 'undefined'
+        && (location.protocol === 'https:' || location.protocol === 'http:');
+      const base = isWeb ? location.origin + location.pathname : SHARE_BASE_URL;
+      return base + '#s=' + encoded;
+    }
+
     let state = initialState();
 
     // === reduce + dispatch ===
@@ -627,6 +720,7 @@
         <button type="button" id="tb-attendance"${attendanceMode
           ? ' style="background:#e8720c; color:#fff; border-color:#e8720c;"' : ''}>✅ 출석체크</button>
         <button type="button" id="tb-png">PNG 다운로드</button>
+        <button type="button" id="tb-share">🔗 공유</button>
         <button type="button" id="tb-reset" style="color:#d33;">초기화</button>
         <button type="button" id="tb-help">📖 사용법</button>
       `;
@@ -641,6 +735,7 @@
       el.querySelector('#tb-presets').onclick = openPresetModal;
       el.querySelector('#tb-attendance').onclick = toggleAttendanceMode;
       el.querySelector('#tb-png').onclick = downloadPng;
+      el.querySelector('#tb-share').onclick = openShareModal;
       el.querySelector('#tb-help').onclick = openManualModal;
       el.querySelector('#tb-reset').onclick = () => {
         if (confirm('모든 좌석 배치를 해제할까요? (단원 명단과 레이아웃은 유지됩니다)')) {
@@ -1257,13 +1352,102 @@
       });
     }
 
+    // === 공유 링크 UI (송신 모달 + 수신 플로우) ===
+
+    async function openShareModal() {
+      let url;
+      try {
+        url = buildShareUrl(await encodeShareData(buildSharePayload(state)));
+      } catch (e) {
+        showToast('공유 링크 생성에 실패했습니다.');
+        return;
+      }
+      const canShare = !!navigator.share;
+      openModal(`
+        <h3 style="margin:0 0 8px;">🔗 배치 공유</h3>
+        <p style="margin:0 0 8px; font-size:13px; color:#555; line-height:1.5;">
+          아래 링크를 카카오톡 등으로 보내면, 받은 사람이 링크를 눌러
+          지금의 단원 명단과 좌석 배치를 그대로 불러와 이어서 편집할 수 있습니다.<br>
+          <span style="color:#b3541e;">링크를 받은 사람은 명단 전체(전화번호 포함)를 볼 수 있으니 담당자에게만 보내세요.</span>
+        </p>
+        <textarea id="share-url" readonly
+          style="width:100%; height:64px; font-size:11px; box-sizing:border-box; word-break:break-all;"></textarea>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap;">
+          ${canShare ? '<button type="button" id="share-sheet">📤 카톡 등으로 공유</button>' : ''}
+          <button type="button" id="share-copy">링크 복사</button>
+          <button type="button" id="share-close">닫기</button>
+        </div>
+      `, (box) => {
+        const ta = box.querySelector('#share-url');
+        ta.value = url; // innerHTML이 아니라 value로 넣어 escape 이슈를 원천 차단
+        box.querySelector('#share-close').onclick = closeModal;
+        box.querySelector('#share-copy').onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            showToast('링크를 복사했습니다. 카톡에 붙여넣어 보내세요.');
+          } catch (_) {
+            // 클립보드 권한이 없는 환경(file:// 등) — 수동 복사 유도
+            ta.focus();
+            ta.select();
+            showToast('자동 복사가 막혀 있어요. 링크를 길게 눌러 직접 복사해 주세요.');
+          }
+        };
+        const sheetBtn = box.querySelector('#share-sheet');
+        if (sheetBtn) sheetBtn.onclick = async () => {
+          try { await navigator.share({ title: '베이스 배치도', url }); }
+          catch (_) { /* 공유 시트 취소는 오류가 아님 */ }
+        };
+      });
+    }
+
+    async function handleIncomingShare() {
+      const hash = location.hash || '';
+      if (!hash.startsWith('#s=')) return;
+      const encoded = hash.slice(3);
+      // 확인/취소와 무관하게 해시를 먼저 제거 — 새로고침할 때마다 다시 묻지 않는다
+      history.replaceState(null, '', location.pathname + location.search);
+      const payload = await decodeShareData(encoded);
+      if (!payload) {
+        showToast('공유 링크가 손상되었거나 형식이 맞지 않습니다.');
+        return;
+      }
+      const memberCount = payload.members.length;
+      const assignedCount = Object.keys(payload.assignments).length;
+      openModal(`
+        <h3 style="margin:0 0 8px;">🔗 공유받은 배치 불러오기</h3>
+        <p style="margin:0 0 12px; font-size:13px; color:#555; line-height:1.5;">
+          단원 ${memberCount}명 · 배치 ${assignedCount}석의 데이터를 받았습니다.<br>
+          [불러오기]를 누르면 <b>내 명단과 좌석 배치가 이 데이터로 교체</b>됩니다.<br>
+          (💾 배치 보관함에 저장해 둔 슬롯은 그대로 유지됩니다)
+        </p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" id="share-import-cancel">취소</button>
+          <button type="button" id="share-import-ok" style="background:#1a73e8; color:#fff; border-color:#1a73e8;">불러오기</button>
+        </div>
+      `, (box) => {
+        box.querySelector('#share-import-cancel').onclick = () => {
+          closeModal();
+          showToast('불러오기를 취소했습니다. 기존 데이터가 유지됩니다.');
+        };
+        box.querySelector('#share-import-ok').onclick = () => {
+          state = pruneLate(migrateState(applySharePayload(state, payload)));
+          saveState(state);
+          selection = null;
+          render();
+          closeModal();
+          showToast('공유받은 배치를 불러왔습니다.');
+        };
+      });
+    }
+
     // === 자가테스트 ===
 
     function assert(cond, label) {
       if (!cond) throw new Error('FAIL: ' + label);
     }
 
-    function runSelfTests() {
+    // 공유 링크 인코딩 테스트가 비동기라 async — 각 테스트를 await로 순차 실행한다.
+    async function runSelfTests() {
       const tests = [
         () => assert(SEED_MEMBERS.length === 65, 'SEED_MEMBERS 길이 65 (임준건 제거)'),
         () => assert(getTotalSeats(INITIAL_LAYOUT) === 66, 'INITIAL_LAYOUT 총합 66'),
@@ -1605,11 +1789,76 @@
             { type:'UPDATE_MEMBER', id:'x', name:'박', memo:'', phone:'01055556666' });
           assert(s4.members[0].phone === '01055556666', '구버전 단원에 전화번호 추가');
         },
+
+        // === 공유 링크 (docs/spec-share-link.md AC 매핑) ===
+        () => {
+          const s0 = initialState();
+          s0.assignments = { 'left-0-0': s0.members[0].id };
+          s0.late = [s0.members[0].id];
+          const p = buildSharePayload(s0);
+          assert(isValidSharePayload(p), '공유 payload 형식 유효');
+          assert(p.members.length === s0.members.length, '공유 payload 명단 전체 포함');
+          assert(p.members[0].phone !== undefined, '공유 payload 전화번호 포함');
+          assert(!isValidSharePayload(null), '공유 payload null 거부');
+          assert(!isValidSharePayload({ ...p, v: 2 }), '공유 payload 버전 불일치 거부');
+          assert(!isValidSharePayload({ ...p, members: 'x' }), '공유 payload members 형식 거부');
+          assert(!isValidSharePayload({ ...p, assignments: [] }), '공유 payload assignments 배열 거부');
+        },
+        () => {
+          // AC3: 적용 시 명단·배치·미도착은 교체, 수신자 보관함은 유지
+          const sender = initialState();
+          sender.members = [{ id: 'x1', name: '가상단원', memo: '테너', phone: '010-1111-2222' }];
+          sender.assignments = { 'left-0-0': 'x1' };
+          sender.late = ['x1'];
+          const receiver = initialState();
+          receiver.presets = [{ name: '내저장', savedAt: 1,
+            layout: { left: [1], right: [1] }, assignments: {}, late: [] }, null, null];
+          const applied = applySharePayload(receiver, buildSharePayload(sender));
+          assert(applied.members.length === 1 && applied.members[0].name === '가상단원', '공유 적용: 명단 교체');
+          assert(applied.members[0].phone === '010-1111-2222', '공유 적용: 전화번호 유지');
+          assert(applied.assignments['left-0-0'] === 'x1', '공유 적용: 배치 교체');
+          assert(applied.late.length === 1 && applied.late[0] === 'x1', '공유 적용: 미도착 교체');
+          assert(applied.presets[0] && applied.presets[0].name === '내저장', '공유 적용: 수신자 보관함 유지');
+        },
+        async () => {
+          // AC4: encode→decode 왕복 deep-equal, AC7: 무압축 r: 해독
+          const p = buildSharePayload(initialState());
+          const enc = await encodeShareData(p);
+          assert(enc.startsWith('c:') || enc.startsWith('r:'), '인코딩 접두사 c:/r:');
+          const dec = await decodeShareData(enc);
+          assert(JSON.stringify(dec) === JSON.stringify(p), '인코딩 왕복 deep-equal');
+          const raw = 'r:' + bytesToBase64Url(new TextEncoder().encode(JSON.stringify(p)));
+          const dec2 = await decodeShareData(raw);
+          assert(JSON.stringify(dec2) === JSON.stringify(p), '무압축 r: 해독');
+        },
+        async () => {
+          // AC5: 파손·형식 불일치 → null (기존 데이터 유지는 호출부 책임)
+          assert((await decodeShareData('c:!!!!')) === null, '파손 c: → null');
+          const brokenJson = 'r:' + bytesToBase64Url(new TextEncoder().encode('{"broken"'));
+          assert((await decodeShareData(brokenJson)) === null, '파손 JSON → null');
+          const notPayload = 'r:' + bytesToBase64Url(new TextEncoder().encode('{"v":1}'));
+          assert((await decodeShareData(notPayload)) === null, '형식 불일치 payload → null');
+          assert((await decodeShareData('x:abcd')) === null, '알 수 없는 접두사 → null');
+          assert((await decodeShareData('')) === null, '빈 문자열 → null');
+        },
+        () => {
+          // AC8: 비웹 환경(file:// 포함)에서는 배포 주소 기준 링크
+          const url = buildShareUrl('c:abc');
+          assert(url === 'https://jayden-choo-aki.github.io/seating-chart/#s=c:abc', '비웹 환경 링크는 배포 주소 기준');
+        },
+        async () => {
+          // AC10: 전체 명단(마이그레이션 반영) 기준 압축 링크 5,000자 이하
+          const s = migrateState(initialState());
+          const enc = await encodeShareData(buildSharePayload(s));
+          if (enc.startsWith('c:')) {
+            assert(SHARE_BASE_URL.length + 3 + enc.length <= 5000, '압축 링크 길이 5000자 이하');
+          }
+        },
       ];
 
       let pass = 0, fail = 0;
       for (const t of tests) {
-        try { t(); pass++; }
+        try { await t(); pass++; }
         catch (e) { console.error('✗', e.message); fail++; }
       }
       console.log(`자가테스트: ${pass}/${pass+fail} 통과 (실패 ${fail}건)`);
@@ -1633,6 +1882,9 @@
       state = pruneLate(migrateState(loadState()));
       saveState(state);
       render();
+
+      // 공유 링크(#s=...)로 열린 경우: 확인 모달을 띄우고 승인 시에만 교체
+      handleIncomingShare();
 
       // 단원 카드 더블클릭 → 수정 모달 (단순 한 번 클릭은 후속 태스크의 "선택"에 쓰임)
       document.getElementById('member-list').addEventListener('dblclick', (e) => {

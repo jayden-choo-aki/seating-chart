@@ -25,5 +25,5 @@ if (!match) { console.log('Failed to extract script'); process.exit(1); }
 // Eval the script
 eval(match[1]);
 
-// Run tests
-runSelfTests();
+// Run tests (async — 공유 링크 인코딩 테스트 포함)
+runSelfTests().then((r) => process.exit(r.fail > 0 ? 1 : 0));
