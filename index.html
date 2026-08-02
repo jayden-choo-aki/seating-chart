@@ -205,7 +205,7 @@
     // === 상수 ===
 
     // 배포 버전 — 화면에는 표시하지 않고 콘솔로만 확인(캐시 반영 여부 진단용). 배포 시 올릴 것.
-    console.log('베이스 배치도 v16');
+    console.log('베이스 배치도 v17');
 
     const STORAGE_KEY = 'seating-chart-v1';
 
@@ -232,6 +232,13 @@
 
     // 2026-07 명단 추가분 — 기존 저장 데이터에도 migrateState()로 병합됨
     const EXTRA_MEMBERS_V2 = ['임중건','박성준','정효영','김명윤','서원준','문정제','김판석','경성수','김태진'];
+
+    // 2026-08 출석부 대조 추가분 — 기존 저장 데이터에도 migrateState()로 병합됨
+    const EXTRA_MEMBERS_V4 = [
+      '곽병준','곽석산','금용석','김정천','김주열','김주하','김태호','김현민','김환수','명체환',
+      '박종길','박주영','배일선','서호석','송상욱','양승욱','윤현준','이래권','이세준','이순배',
+      '임천규','조갑래','조대술','조승희','한승훈','현우석','황규헌'
+    ];
 
     const CHOSUNG_LIST = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ',
                           'ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -407,6 +414,14 @@
           next = { ...next, members: next.members.filter(m => !removedIds.has(m.id)), assignments };
         }
         next = { ...next, seedVersion: 3 };
+      }
+      // v4: 2026-08 출석부 대조 명단 병합 (같은 이름이 이미 있으면 건너뜀 → 멱등)
+      if (next.seedVersion < 4) {
+        const existing = new Set(next.members.map(m => m.name));
+        const added = EXTRA_MEMBERS_V4
+          .map((name, i) => ({ id: `m_v4_${i}`, name, memo: '', phone: '' }))
+          .filter(m => !existing.has(m.name));
+        next = { ...next, members: [...next.members, ...added], seedVersion: 4 };
       }
       // 구버전 layout에 standbyCols 기본값 보정 (스키마 호환용 — 렌더에서는 미사용)
       if (!next.layout.standbyCols) {
@@ -1583,15 +1598,15 @@
         },
         () => {
           const s1 = migrateState(initialState());
-          assert(s1.members.length === 65 + EXTRA_MEMBERS_V2.length && s1.seedVersion === 3,
-            'migrateState 신규 설치 → 74명, seedVersion 3');
+          assert(s1.members.length === 65 + EXTRA_MEMBERS_V2.length + EXTRA_MEMBERS_V4.length && s1.seedVersion === 4,
+            'migrateState 신규 설치 → 101명, seedVersion 4');
           const s2 = migrateState(s1);
-          assert(s2 === s1, 'migrateState 멱등 (seedVersion 3에서 무변경)');
+          assert(s2 === s1, 'migrateState 멱등 (seedVersion 4에서 무변경)');
         },
         () => {
           const s0 = { members: [{id:'x', name:'박성준', memo:''}], layout: INITIAL_LAYOUT, assignments: {} };
           const s1 = migrateState(s0);
-          assert(s1.members.length === 1 + EXTRA_MEMBERS_V2.length - 1, 'migrateState 동명 중복 제외');
+          assert(s1.members.length === 1 + EXTRA_MEMBERS_V2.length - 1 + EXTRA_MEMBERS_V4.length, 'migrateState 동명 중복 제외');
           assert(s1.members.filter(m => m.name === '박성준').length === 1, '박성준 1명 유지');
         },
         () => {
@@ -1616,7 +1631,7 @@
         },
         () => {
           // AC9: 구버전 layout에 standbyCols 기본값 보정
-          const s0 = { members: [], layout: { left:[1], right:[0] }, assignments: {}, seedVersion: 3 };
+          const s0 = { members: [], layout: { left:[1], right:[0] }, assignments: {}, seedVersion: 4 };
           const s1 = migrateState(s0);
           assert(s1.layout.standbyCols === 7, 'migrateState standbyCols 기본 7');
         },
@@ -1643,7 +1658,7 @@
           assert(s1.members.every(m => m.name !== '임준건'), 'v3 임준건 명단 제거');
           assert(s1.assignments['left-0-0'] === undefined, 'v3 임준건 좌석 배치 해제');
           assert(s1.assignments['left-0-1'] === 'old2', 'v3 다른 배치 보존');
-          assert(s1.seedVersion === 3, 'v3 seedVersion 갱신');
+          assert(s1.seedVersion === 4, 'v3+v4 seedVersion 갱신');
         },
         () => {
           const s0 = {
